@@ -8,12 +8,12 @@ import type { Player } from '@/types/game';
 import { PlayerList } from '@/components/game/PlayerList';
 import { ChatWindow } from '@/components/game/ChatWindow';
 import { QuestionDisplay } from '@/components/game/QuestionDisplay';
-import { ExtremeContentForm } from '@/components/game/ExtremeContentForm';
+// import { ExtremeContentForm } from '@/components/game/ExtremeContentForm'; // Removed
 import { Timer } from '@/components/game/Timer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, Copy, LogOut, Play, HelpCircle, Zap, Send, Users, AlertTriangle, Loader2 } from 'lucide-react'; // Added Loader2
+import { ChevronLeft, Copy, LogOut, Play, HelpCircle, Zap, Send, Users, AlertTriangle, Loader2 } from 'lucide-react'; 
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -34,7 +34,6 @@ export default function RoomPage() {
   const [isLeaving, setIsLeaving] = useState(false);
   const [dareAnswerText, setDareAnswerText] = useState("");
 
-  // Effect to get localPlayerId from localStorage or prompt if not host
   useEffect(() => {
     const storedPlayerId = localStorage.getItem(`riskyRoomsPlayerId_${roomId}`);
     if (storedPlayerId) {
@@ -141,7 +140,7 @@ export default function RoomPage() {
               <Copy className="w-4 h-4" />
             </Button>
           </h1>
-          <Badge variant={room.mode === 'extreme' ? 'destructive' : room.mode === 'moderate' ? 'secondary': 'default'} className="capitalize mt-1 text-sm">{room.mode} Mode</Badge>
+          <Badge variant={room.mode === 'moderate' ? 'destructive' : 'default'} className="capitalize mt-1 text-sm">{room.mode} Mode</Badge>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">You are: {currentPlayer.nickname} {currentPlayer.isHost && "(Host)"}</span>
@@ -192,9 +191,7 @@ export default function RoomPage() {
              </Card>
           )}
           
-          {room.mode === 'extreme' && (
-            <ExtremeContentForm roomId={roomId} player={currentPlayer} />
-          )}
+          {/* ExtremeContentForm removed */}
         </aside>
 
         {/* Middle Column: Game Area */}
@@ -278,7 +275,6 @@ export default function RoomPage() {
             </Card>
           )}
 
-          {/* Chat Window should always be visible once room is loaded */}
           <ChatWindow messages={room.chatMessages} roomId={roomId} currentPlayer={currentPlayer} />
         </main>
       </div>

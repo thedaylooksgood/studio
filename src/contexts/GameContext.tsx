@@ -4,7 +4,7 @@
 import type { Room, Player, ChatMessage, GameMode, Question, GameState, ChatMessageType } from '@/types/game';
 import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 import { generateRoomCode, getInitialQuestions, selectNextPlayer, getRandomQuestion } from '@/lib/gameUtils';
-import { flagMessage, FlagMessageInput, FlagMessageOutput } from '@/ai/flows/flag-message';
+import { flagMessage, FlagMessageOutput } from '@/ai/flows/flag-message';
 import { useToast } from '@/hooks/use-toast';
 
 interface GameContextType {
@@ -16,7 +16,7 @@ interface GameContextType {
   selectTruthOrDare: (roomId: string, type: 'truth' | 'dare') => void;
   submitAnswer: (roomId: string, answer: string, isDareSuccessful?: boolean) => void;
   addChatMessage: (roomId: string, senderId: string, senderNickname: string, text: string, type?: ChatMessageType) => Promise<void>;
-  addExtremeContent: (roomId: string, playerId: string, type: 'truth' | 'dare', text: string) => Promise<{success: boolean, message: string}>;
+  // addExtremeContent removed
   getCurrentRoom: (roomId: string) => Room | undefined;
   getPlayer: (roomId: string, playerId: string) => Player | undefined;
   nextTurn: (roomId: string) => void;
@@ -55,7 +55,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         return updatedRooms;
     });
     return newRoomId;
-  }, []); // Removed rooms from dependency array as setRooms updater handles prevRooms
+  }, [toast]); // Removed rooms, initialContent, etc from dependencies
 
   const joinRoom = useCallback((roomId: string, playerNickname: string): Player | null => {
     const roomIndex = rooms.findIndex(r => r.id === roomId);
@@ -64,7 +64,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       return null;
     }
     
-    const currentRoom = rooms[roomIndex]; // Get current state of the room
+    const currentRoom = rooms[roomIndex]; 
     if (currentRoom.players.find(p => p.nickname.toLowerCase() === playerNickname.toLowerCase())) {
       toast({ title: "Error", description: "Nickname already taken in this room.", variant: "destructive" });
       return null;
@@ -124,7 +124,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       
       if (room.hostId === playerId && remainingPlayers.length > 0) {
         newHostId = remainingPlayers[0].id; 
-        // Ensure the new host's isHost flag is set true directly in remainingPlayers for consistency
         const hostIndex = remainingPlayers.findIndex(p => p.id === newHostId);
         if (hostIndex !== -1) {
             remainingPlayers[hostIndex] = { ...remainingPlayers[hostIndex], isHost: true };
@@ -135,7 +134,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         r.id === roomId 
         ? { 
             ...r, 
-            players: remainingPlayers.map(p => p.id === newHostId ? {...p, isHost: true} : p), // map again to ensure host flag
+            players: remainingPlayers.map(p => p.id === newHostId ? {...p, isHost: true} : p),
             currentPlayerId: newCurrentPlayerId,
             hostId: newHostId,
             gameState: newGameState,
@@ -152,7 +151,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('riskyRoomsData', JSON.stringify(updatedRooms));
       return updatedRooms;
     });
-  }, []); // Removed rooms dependency for stability, relies on prevRooms from updater
+  }, []); 
 
   const startGame = useCallback((roomId: string) => {
     setRooms(prevRooms => {
@@ -187,13 +186,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         if (r.id === roomId && r.gameState === 'playerChoosing') {
           const questions = type === 'truth' ? r.truths : r.dares;
           const question = getRandomQuestion(questions, type);
-          if (!question && r.mode === 'extreme' && questions.length === 0) {
-               toast({ title: "No questions", description: `No ${type}s available. Add some first!`, variant: "destructive"});
-               return r; 
-          }
+          
           if (!question) { 
-               toast({ title: "Out of Questions!", description: `No more ${type}s available in this mode. Try adding some if in Extreme mode, or restart.`, variant: "destructive"});
-               return { ...r, currentQuestion: {id: "empty", text: `No more ${type}s! Please add more or end game.`, type}, gameState: 'awaitingAnswer'};
+               toast({ title: "Out of Questions!", description: `No more ${type}s available in this mode. The game might need to be restarted with different content if all preloaded questions are used.`, variant: "destructive"});
+               return { ...r, currentQuestion: {id: "empty", text: `No more ${type}s!`, type}, gameState: 'awaitingAnswer'};
           }
           return {
             ...r,
@@ -255,7 +251,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('riskyRoomsData', JSON.stringify(updatedRooms));
       return updatedRooms;
     });
-  }, []); // Removed rooms dependency, relies on prevRooms
+  }, []); 
 
   const submitAnswer = useCallback((roomId: string, answer: string, isDareSuccessful?: boolean) => {
     setRooms(prevRooms => {
@@ -280,42 +276,44 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         return r;
       });
       localStorage.setItem('riskyRoomsData', JSON.stringify(updatedRooms));
-      return updatedRooms;
+      // Call nextTurn outside of setRooms to ensure it uses the updated state
+      // However, since nextTurn itself uses setRooms with a functional update, it's okay.
+      // But for clarity and to avoid potential race conditions if nextTurn was more complex:
+      // const finalRooms = updatedRooms; // If you needed to reference the immediate result of this setRooms
+      // return finalRooms;
+      return updatedRooms; // This is fine as nextTurn below will operate on the "next" state.
     });
     nextTurn(roomId);
-  }, [nextTurn]); // nextTurn is stable due to its own useCallback([])
+  }, [nextTurn]);
 
 
   const addChatMessage = useCallback(async (roomId: string, senderId: string, senderNickname: string, text: string, type: ChatMessageType = 'message') => {
-    // Directly use 'rooms' state here for finding the room, as it won't be part of the setRooms update chain
     const currentRoom = rooms.find(r => r.id === roomId);
     if (!currentRoom) return;
 
     let processedText = text;
-    let isFlagged = false;
     let finalSenderNickname = senderNickname;
     let finalSenderId = senderId;
     let finalType = type;
 
-    if (currentRoom.mode === 'extreme') {
-      setIsLoadingModeration(true);
-      try {
-        const moderationResult: FlagMessageOutput = await flagMessage({ messageText: text });
-        if (moderationResult.flagged) {
-          processedText = `Message from ${senderNickname} was flagged: ${moderationResult.reason}`;
-          finalSenderNickname = 'System'; 
-          finalSenderId = 'system';
-          finalType = 'system';
-          isFlagged = true;
-          toast({ title: "Content Moderated", description: `Your message was flagged: ${moderationResult.reason}`, variant: "destructive" });
-        }
-      } catch (error) {
-        console.error("Moderation error:", error);
-        toast({ title: "Moderation Error", description: "Could not process message moderation.", variant: "destructive" });
-      } finally {
-        setIsLoadingModeration(false);
+    // Moderation can still be useful for chat even if extreme content submission is removed
+    setIsLoadingModeration(true);
+    try {
+      const moderationResult: FlagMessageOutput = await flagMessage({ messageText: text });
+      if (moderationResult.flagged) {
+        processedText = `Message from ${senderNickname} was flagged: ${moderationResult.reason}`;
+        finalSenderNickname = 'System'; 
+        finalSenderId = 'system';
+        finalType = 'system';
+        toast({ title: "Content Moderated", description: `Your message was flagged: ${moderationResult.reason}`, variant: "destructive" });
       }
+    } catch (error) {
+      console.error("Moderation error:", error);
+      toast({ title: "Moderation Error", description: "Could not process message moderation.", variant: "destructive" });
+    } finally {
+      setIsLoadingModeration(false);
     }
+    
 
     setRooms(prevRooms => {
       const updatedRooms = prevRooms.map(r => 
@@ -329,50 +327,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('riskyRoomsData', JSON.stringify(updatedRooms));
       return updatedRooms;
     });
-  }, [rooms, toast]); // Added rooms dependency for currentRoom access
+  }, [rooms, toast]); 
 
-  const addExtremeContent = useCallback(async (roomId: string, playerId: string, type: 'truth' | 'dare', text: string): Promise<{success: boolean, message: string}> => {
-    const currentRoom = rooms.find(r => r.id === roomId); // Access current rooms state
-    if (!currentRoom || currentRoom.mode !== 'extreme') {
-      return {success: false, message: "Can only add content in Extreme mode."};
-    }
-    
-    setIsLoadingModeration(true);
-    try {
-      const moderationResult: FlagMessageOutput = await flagMessage({ messageText: text });
-      if (moderationResult.flagged) {
-        setIsLoadingModeration(false);
-        toast({ title: "Content Moderated", description: `Your submission was flagged: ${moderationResult.reason}`, variant: "destructive" });
-        return {success: false, message: `Submission flagged: ${moderationResult.reason}`};
-      }
-    } catch (error) {
-      console.error("Moderation error:", error);
-      setIsLoadingModeration(false);
-      toast({ title: "Moderation Error", description: "Could not process content moderation.", variant: "destructive" });
-      return {success: false, message: "Moderation error."};
-    }
-    setIsLoadingModeration(false);
-
-    const newQuestion: Question = { id: `user-${type}-${Date.now()}`, text, type, submittedBy: playerId, isUserSubmitted: true };
-    setRooms(prevRooms => {
-      const updatedRooms = prevRooms.map(r => {
-        if (r.id === roomId) {
-          const updatedQuestions = type === 'truth' ? [...r.truths, newQuestion] : [...r.dares, newQuestion];
-          const player = r.players.find(p => p.id === playerId); // Find player from prevRooms for nickname
-          return {
-            ...r,
-            [type === 'truth' ? 'truths' : 'dares']: updatedQuestions,
-            chatMessages: [...r.chatMessages, { id: Date.now().toString(), senderNickname: 'System', text: `${player?.nickname || 'A player'} added a new ${type}.`, timestamp: new Date(), type: 'system' }]
-          };
-        }
-        return r;
-      });
-      localStorage.setItem('riskyRoomsData', JSON.stringify(updatedRooms));
-      return updatedRooms;
-    });
-    toast({ title: "Content Added", description: `Your ${type} has been added to the game!`});
-    return {success: true, message: `${type} added successfully.`};
-  }, [rooms, toast]); // Added rooms dependency
+  // addExtremeContent function removed
 
   const getCurrentRoom = useCallback((roomId: string) => rooms.find(r => r.id === roomId), [rooms]);
   const getPlayer = useCallback((roomId: string, playerId: string) => getCurrentRoom(roomId)?.players.find(p => p.id === playerId), [getCurrentRoom]);
@@ -383,6 +340,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       try {
         const parsedRooms: Room[] = JSON.parse(savedData).map((room: Room) => ({
           ...room,
+          mode: (room.mode === 'extreme' ? 'moderate' : room.mode) as GameMode, // Convert old extreme to moderate
           lastActivity: new Date(room.lastActivity),
           chatMessages: room.chatMessages.map(msg => ({...msg, timestamp: new Date(msg.timestamp)}))
         }));
@@ -405,7 +363,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   return (
     <GameContext.Provider value={{ 
       rooms, createRoom, joinRoom, leaveRoom, startGame, 
-      selectTruthOrDare, submitAnswer, addChatMessage, addExtremeContent, 
+      selectTruthOrDare, submitAnswer, addChatMessage, // addExtremeContent removed
       getCurrentRoom, getPlayer, nextTurn, isLoadingModeration
     }}>
       {children}
@@ -420,4 +378,3 @@ export const useGame = (): GameContextType => {
   }
   return context;
 };
-

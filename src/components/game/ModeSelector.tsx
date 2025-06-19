@@ -15,26 +15,27 @@ interface ModeSelectorProps {
 const modes: { value: GameMode; label: string; description: string; icon: React.ElementType, warning?: string, iconColor?: string }[] = [
   {
     value: 'minimal',
-    label: 'Minimal',
-    description: 'PG-13 questions. Safe for all (adult) audiences.',
+    label: 'Minimal (Spicy)',
+    description: 'Flirty & suggestive. Getting warmed up!',
     icon: Shield,
     iconColor: 'text-green-500',
   },
   {
     value: 'moderate',
-    label: 'Moderate',
-    description: 'Edgy adult content. Expect some spice!',
+    label: 'Moderate (Hot)',
+    description: 'Seriously steamy & risqué. Expect some heat!',
     icon: Flame,
     iconColor: 'text-orange-500',
   },
-  {
-    value: 'extreme',
-    label: 'Extreme',
-    description: 'User-submitted explicit content. No boundaries!',
-    icon: AlertTriangle,
-    warning: 'Potentially offensive content. Player discretion strongly advised.',
-    iconColor: 'text-red-500',
-  },
+  // Extreme mode removed based on user request
+  // {
+  //   value: 'extreme',
+  //   label: 'Extreme',
+  //   description: 'User-submitted explicit content. No boundaries!',
+  //   icon: AlertTriangle,
+  //   warning: 'Potentially offensive content. Player discretion strongly advised.',
+  //   iconColor: 'text-red-500',
+  // },
 ];
 
 export function ModeSelector({ selectedMode, onModeChange }: ModeSelectorProps) {

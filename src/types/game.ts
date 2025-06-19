@@ -1,5 +1,5 @@
 
-export type GameMode = 'minimal' | 'moderate' | 'extreme';
+export type GameMode = 'minimal' | 'moderate';
 
 export interface Player {
   id: string;
@@ -23,8 +23,8 @@ export interface Question {
   id: string;
   text: string;
   type: 'truth' | 'dare';
-  submittedBy?: string; // Player ID for user-submitted questions
-  isUserSubmitted?: boolean;
+  submittedBy?: string; // Player ID for user-submitted questions - will be unused now
+  isUserSubmitted?: boolean; // will be unused now
 }
 
 export type GameState = 'waiting' | 'inProgress' | 'playerChoosing' | 'questionRevealed' | 'awaitingAnswer' | 'gameOver';
