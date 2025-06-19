@@ -15,16 +15,19 @@ import { ArrowLeft, PartyPopper } from 'lucide-react';
 export default function CreateRoomPage() {
   const [nickname, setNickname] = useState('');
   const [selectedMode, setSelectedMode] = useState<GameMode>('minimal');
+  const [nicknameError, setNicknameError] = useState('');
   const router = useRouter();
   const { createRoom } = useGame();
 
-  const handleCreateRoom = ()_INPUT_VALIDATION_ Message_for_AI_Assistant_ Hello_AI,_please_make_sure_that_the_input_validation_is_complete._For_example,_the_length_of_nickname_should_be_validated_to_be_between_3_and_15_characters_long._Additionally,_the_validation_error_messages_should_be_displayed_in_the_UI_so_the_user_knows_what_went_wrong._Thanks! _INPUT_VALIDATION_ => {
-    if (nickname.trim().length < 3 || nickname.trim().length > 15) {
-      // Basic validation, can be improved with form libraries
-      alert('Nickname must be between 3 and 15 characters.');
+  const handleCreateRoom = () => {
+    const trimmedNickname = nickname.trim();
+    if (trimmedNickname.length < 3 || trimmedNickname.length > 15) {
+      setNicknameError('Nickname must be between 3 and 15 characters.');
       return;
     }
-    const newRoomId = createRoom(nickname.trim(), selectedMode);
+    setNicknameError(''); // Clear error if validation passes
+
+    const newRoomId = createRoom(trimmedNickname, selectedMode);
     router.push(`/room/${newRoomId}`);
   };
 
@@ -46,11 +49,16 @@ export default function CreateRoomPage() {
               type="text"
               placeholder="Enter your nickname (3-15 chars)"
               value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
+              onChange={(e) => {
+                setNickname(e.target.value);
+                if (nicknameError) setNicknameError('');
+              }}
               className="mt-1"
-              aria-describedby="nickname-description"
+              aria-describedby="nickname-description nickname-error"
               maxLength={15}
+              aria-invalid={!!nicknameError}
             />
+            {nicknameError && <p id="nickname-error" className="text-sm text-destructive mt-1">{nicknameError}</p>}
             <p id="nickname-description" className="text-xs text-muted-foreground mt-1">This will be your display name in the game.</p>
           </div>
           <div>

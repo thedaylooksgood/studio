@@ -18,7 +18,7 @@ export default function JoinRoomPage() {
   const { joinRoom, rooms } = useGame(); // `rooms` to check if room exists
   const { toast } = useToast();
 
-  const handleJoinRoom = ()_INPUT_VALIDATION_ Message_for_AI_Assistant_ Hello_AI,_please_make_sure_that_the_input_validation_is_complete._For_example,_the_length_of_nickname_should_be_validated_to_be_between_3_and_15_characters_long._The_room_code_should_be_validated_to_be_6_characters_long_and_alphanumeric._Additionally,_the_validation_error_messages_should_be_displayed_in_the_UI_so_the_user_knows_what_went_wrong._Thanks! _INPUT_VALIDATION_ => {
+  const handleJoinRoom = () => {
     const trimmedNickname = nickname.trim();
     const trimmedRoomCode = roomCode.trim().toUpperCase();
 
@@ -95,7 +95,7 @@ export default function JoinRoomPage() {
           <Button 
             onClick={handleJoinRoom} 
             className="w-full bg-accent hover:bg-accent/90 text-accent-foreground animate-button-press"
-            disabled={nickname.trim().length < 3 || nickname.trim().length > 15 || roomCode.trim().length !== 6}
+            disabled={nickname.trim().length < 3 || nickname.trim().length > 15 || roomCode.trim().length !== 6 || !/^[A-Z0-9]{6}$/.test(roomCode.trim())}
             aria-label="Join Room"
             >
             <LogIn className="mr-2 h-5 w-5" /> Join Room
