@@ -30,6 +30,7 @@ export function selectNextPlayer(players: Player[], currentPlayerId: string | nu
   return players[nextIndex];
 }
 
+// This function now provides FALLBACK questions
 export function getInitialQuestions(mode: GameMode): { truths: Question[], dares: Question[] } {
   let content;
   switch (mode) {
@@ -40,15 +41,16 @@ export function getInitialQuestions(mode: GameMode): { truths: Question[], dares
       content = moderateContent;
       break;
     default: 
-      console.warn(`Unknown game mode: ${mode}, defaulting to minimal.`);
+      console.warn(`Unknown game mode: ${mode}, defaulting to minimal for fallback.`);
       content = minimalContent;
   }
   return {
-    truths: content.truths.map((text, i) => ({ id: `truth-preloaded-${mode}-${i}`, text, type: 'truth', isUserSubmitted: false })),
-    dares: content.dares.map((text, i) => ({ id: `dare-preloaded-${mode}-${i}`, text, type: 'dare', isUserSubmitted: false })),
+    truths: content.truths.map((text, i) => ({ id: `truth-fallback-${mode}-${i}`, text, type: 'truth' })),
+    dares: content.dares.map((text, i) => ({ id: `dare-fallback-${mode}-${i}`, text, type: 'dare' })),
   };
 }
 
+// This function is kept for potential use with fallback content or other utilities
 export function getRandomQuestion(questions: Question[], type: 'truth' | 'dare'): Question | null {
   const availableQuestions = questions.filter(q => q.type === type);
   if (availableQuestions.length === 0) return null;

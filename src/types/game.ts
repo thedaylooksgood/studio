@@ -5,14 +5,14 @@ export interface Player {
   id: string;
   nickname: string;
   isHost: boolean;
-  score: number; // Optional: can be used for tracking points
+  score: number;
 }
 
 export type ChatMessageType = 'message' | 'truthAnswer' | 'dareResult' | 'system' | 'playerJoin' | 'playerLeave' | 'turnChange';
 
 export interface ChatMessage {
-  id: string;
-  senderId?: string; // Player ID or 'system'
+  id:string;
+  senderId?: string;
   senderNickname: string;
   text: string;
   timestamp: Date;
@@ -23,11 +23,15 @@ export interface Question {
   id: string;
   text: string;
   type: 'truth' | 'dare';
-  submittedBy?: string; // Player ID for user-submitted questions - will be unused now
-  isUserSubmitted?: boolean; // will be unused now
 }
 
 export type GameState = 'waiting' | 'inProgress' | 'playerChoosing' | 'questionRevealed' | 'awaitingAnswer' | 'gameOver';
+
+// Stores history of question TEXTS asked to each player for each type
+export type PlayerQuestionHistory = Record<string, {
+  truths: string[];
+  dares: string[];
+}>;
 
 export interface Room {
   id: string; // Room code
@@ -35,14 +39,15 @@ export interface Room {
   players: Player[];
   currentPlayerId: string | null;
   gameState: GameState;
-  truths: Question[];
-  dares: Question[];
+  truths: Question[]; // Fallback preloaded truths
+  dares: Question[]; // Fallback preloaded dares
   currentQuestion: Question | null;
   chatMessages: ChatMessage[];
   hostId: string | null;
   round: number;
   timerValue?: number;
   lastActivity: Date;
+  playerQuestionHistory: PlayerQuestionHistory;
 }
 
 export interface PreloadedContent {

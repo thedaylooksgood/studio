@@ -10,9 +10,9 @@ import { ChatWindow } from '@/components/game/ChatWindow';
 import { QuestionDisplay } from '@/components/game/QuestionDisplay';
 import { Timer } from '@/components/game/Timer';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Copy, LogOut, Play, HelpCircle, Zap, Send, Users, Loader2 } from 'lucide-react'; 
+import { Copy, LogOut, Play, HelpCircle, Zap, Send, Users, Loader2, Brain } from 'lucide-react'; 
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,7 +26,7 @@ export default function RoomPage() {
 
   const { 
     getCurrentRoom, getPlayer, startGame, selectTruthOrDare, 
-    submitAnswer, leaveRoom, isLoadingModeration 
+    submitAnswer, leaveRoom, isLoadingModeration, isLoadingQuestion // Added isLoadingQuestion
   } = useGame();
   
   const [localPlayerId, setLocalPlayerId] = useState<string | null>(null);
@@ -38,27 +38,21 @@ export default function RoomPage() {
     if (storedPlayerId) {
       setLocalPlayerId(storedPlayerId);
     } else {
-      // Attempt to derive player ID if not in localStorage (e.g., host just created room)
       const room = getCurrentRoom(roomId);
       if (room && room.players.length === 1 && room.hostId === room.players[0].id) {
-        // If only one player and they are the host, assume this is the host.
         setLocalPlayerId(room.hostId);
         localStorage.setItem(`riskyRoomsPlayerId_${roomId}`, room.hostId);
       } else if (room && room.players.length > 0) {
-        // Check query params for playerId, common after joining
         const searchParams = new URLSearchParams(window.location.search);
         const playerIdFromQuery = searchParams.get('playerId');
         if (playerIdFromQuery && room.players.find(p => p.id === playerIdFromQuery)) {
           setLocalPlayerId(playerIdFromQuery);
           localStorage.setItem(`riskyRoomsPlayerId_${roomId}`, playerIdFromQuery);
         } else {
-           // If no clear way to identify the player, redirect.
-           // This can happen if a user bookmarks the room page or state is lost.
            toast({ title: "Session Expired", description: "Your player session was not found. Please rejoin the room.", variant: "destructive"});
            router.push('/join');
         }
       }
-      // If room doesn't exist yet (still loading), this effect will re-run
     }
   }, [roomId, getCurrentRoom, router, toast]);
 
@@ -68,24 +62,22 @@ export default function RoomPage() {
   const gamePlayerWhoseTurn = room?.currentPlayerId ? getPlayer(roomId, room.currentPlayerId) : undefined;
 
   useEffect(() => {
-    // If room data is not available after a short delay (and not just loading moderation state),
-    // assume room doesn't exist or was closed, then redirect.
-    if (!room && !isLoadingModeration && localPlayerId !== null) { // Check localPlayerId to ensure initial setup attempts have run
+    if (!room && !isLoadingModeration && !isLoadingQuestion && localPlayerId !== null) { 
       const timer = setTimeout(() => {
-        if(!getCurrentRoom(roomId)) { // Double check after delay
+        if(!getCurrentRoom(roomId)) {
             toast({ title: "Room Not Found", description: "This room doesn't exist or has been closed.", variant: "destructive" });
             router.push('/');
         }
-      }, 2000); // Increased delay to allow for state hydration
+      }, 2000); 
       return () => clearTimeout(timer);
     }
-  }, [room, roomId, router, toast, isLoadingModeration, getCurrentRoom, localPlayerId]);
+  }, [room, roomId, router, toast, isLoadingModeration, isLoadingQuestion, getCurrentRoom, localPlayerId]);
   
   const handleLeaveRoom = () => {
     if (currentPlayer) {
       setIsLeaving(true);
       leaveRoom(roomId, currentPlayer.id);
-      localStorage.removeItem(`riskyRoomsPlayerId_${roomId}`); // Clear specific room player ID
+      localStorage.removeItem(`riskyRoomsPlayerId_${roomId}`); 
       toast({ title: "Left Room", description: "You have left the game room." });
       router.push('/');
     }
@@ -159,7 +151,6 @@ export default function RoomPage() {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-grow">
-        {/* Left Column: Players & Game Info */}
         <aside className="lg:col-span-1 space-y-6">
           <Card>
             <CardHeader><CardTitle className="text-xl font-headline">Players ({room.players.length})</CardTitle></CardHeader>
@@ -188,7 +179,7 @@ export default function RoomPage() {
                     {currentPlayer.isHost && (
                         <Button 
                             onClick={() => startGame(roomId)} 
-                            disabled={room.players.length < 1} // Host can start with 1 player (themselves)
+                            disabled={room.players.length < 1} 
                             className="w-full bg-accent text-accent-foreground hover:bg-accent/90 animate-button-press"
                         >
                             <Play className="w-5 h-5 mr-2"/> Start Game ({room.players.length}/1+ player)
@@ -200,7 +191,6 @@ export default function RoomPage() {
           )}
         </aside>
 
-        {/* Middle Column: Game Area */}
         <main className="lg:col-span-2 space-y-6">
           {(room.gameState !== 'waiting' && room.gameState !== 'gameOver') && (
             <>
@@ -210,11 +200,23 @@ export default function RoomPage() {
                 <Card className="shadow-lg">
                   <CardHeader><CardTitle className="text-xl font-headline text-center">Your Choice, {currentPlayer.nickname}!</CardTitle></CardHeader>
                   <CardContent className="flex flex-col sm:flex-row gap-4 justify-center">
-                    <Button onClick={() => selectTruthOrDare(roomId, 'truth')} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-6 text-lg" size="lg">
-                      <HelpCircle className="w-6 h-6 mr-2"/> Truth
+                    <Button 
+                        onClick={() => selectTruthOrDare(roomId, 'truth')} 
+                        className="bg-blue-600 hover:bg-blue-700 text-white flex-1 py-6 text-lg" 
+                        size="lg"
+                        disabled={isLoadingQuestion}
+                    >
+                      {isLoadingQuestion ? <Loader2 className="w-6 h-6 mr-2 animate-spin"/> : <HelpCircle className="w-6 h-6 mr-2"/>} 
+                      Truth
                     </Button>
-                    <Button onClick={() => selectTruthOrDare(roomId, 'dare')} className="bg-red-600 hover:bg-red-700 text-white flex-1 py-6 text-lg" size="lg">
-                      <Zap className="w-6 h-6 mr-2"/> Dare
+                    <Button 
+                        onClick={() => selectTruthOrDare(roomId, 'dare')} 
+                        className="bg-red-600 hover:bg-red-700 text-white flex-1 py-6 text-lg" 
+                        size="lg"
+                        disabled={isLoadingQuestion}
+                    >
+                      {isLoadingQuestion ? <Loader2 className="w-6 h-6 mr-2 animate-spin"/> : <Zap className="w-6 h-6 mr-2"/>}
+                      Dare
                     </Button>
                   </CardContent>
                 </Card>
@@ -223,14 +225,12 @@ export default function RoomPage() {
               {isMyTurn && room.gameState === 'questionRevealed' && room.currentQuestion && (
                 <Dialog open={isAnswerModalOpen} onOpenChange={(isOpen) => {
                   setIsAnswerModalOpen(isOpen);
-                  if (!isOpen) { // If modal is closed without submitting
+                  if (!isOpen) { 
                     setAnswerText("");
                     setDareAnswerText("");
                   }
                 }}>
                     <DialogTrigger asChild>
-                        {/* Button to open modal is implicitly handled by onAnimationComplete or if user re-opens */}
-                        {/* This button could be shown if modal auto-open fails or is disabled */}
                         {!isAnswerModalOpen && 
                           <Button className="w-full mt-4 bg-accent text-accent-foreground hover:bg-accent/90 animate-button-press" size="lg" onClick={handleOpenAnswerModal}>
                               <Send className="w-5 h-5 mr-2"/> Respond to {room.currentQuestion.type}
@@ -253,7 +253,7 @@ export default function RoomPage() {
                                 <Button onClick={handleSubmitTruthAnswer} className="bg-primary">Submit Truth</Button>
                             </DialogFooter>
                         </>
-                        ) : ( /* Dare */
+                        ) : ( 
                         <>
                             <Textarea placeholder="Describe what happened (optional for success, required for fail/skip)..." value={dareAnswerText} onChange={(e) => setDareAnswerText(e.target.value)} className="min-h-[100px]" />
                              <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0 sm:space-x-2">
@@ -271,31 +271,24 @@ export default function RoomPage() {
                 <Timer 
                     duration={60} 
                     onTimeUp={() => {
-                        if(isMyTurn && (room.gameState === 'questionRevealed' || room.gameState === 'playerChoosing')) { // Also handle if playerChoosing times out
+                        if(isMyTurn && (room.gameState === 'questionRevealed' || room.gameState === 'playerChoosing')) {
                             toast({title: "Time's Up!", description: "Moving to next player.", variant: "destructive"});
-                            // Auto-submit based on current state
                             if (room.gameState === 'questionRevealed') {
                                submitAnswer(roomId, room.currentQuestion?.type === 'truth' ? "Time ran out (skipped)." : "Time ran out (failed).", false);
                             } else if (room.gameState === 'playerChoosing') {
-                                // If player fails to choose, effectively skip their turn by moving to next player
-                                // The game context's nextTurn will handle this transition.
-                                // No direct answer submission here, just advance turn.
-                                // This part is tricky, GameContext.nextTurn should be robust.
-                                // For simplicity, we can consider this a "fail" of sorts for the turn.
-                                // Calling submitAnswer with a generic "skipped turn" might be too complex here.
-                                // Ideally, nextTurn itself should be callable to skip.
-                                // For now, rely on submitAnswer from questionRevealed for auto-skip.
-                                // If stuck in playerChoosing, this timer might need to directly call nextTurn via context if available
-                                // Or we ensure playerChoosing leads to questionRevealed quickly or has its own timeout path.
-                                // This onTimeUp primarily targets the answer phase.
-                                 if (room.currentQuestion) { // If somehow a question exists from a previous state
+                                 if (room.currentQuestion) { 
                                      submitAnswer(roomId, room.currentQuestion?.type === 'truth' ? "Time ran out (skipped)." : "Time ran out (failed).", false);
                                  } else {
-                                     // If no question, and player timed out choosing, this is an edge case.
-                                     // Potentially call a generic 'skip turn' if that was a function.
-                                     // For now, this will effectively do nothing if no question, until next turn is forced by other means.
-                                     // A better approach for playerChoosing timeout might be needed in GameContext.
-                                     console.warn("Time up in playerChoosing without a question, manual advance might be needed or improve GameContext.nextTurn for skips.")
+                                     console.warn("Time up in playerChoosing without a question, forcing next turn.")
+                                     // If stuck choosing, and AI hasn't provided question, force next turn.
+                                     // This might mean submitting a "skip" for a non-existent question, or better, just advancing.
+                                     // For now, we assume nextTurn() in submitAnswer handles this.
+                                     // If AI generation is stuck, this might not resolve cleanly.
+                                     // A direct call to nextTurn without submitAnswer could be an option.
+                                     // For now, the user will see a "Moving to next player" and the game might advance.
+                                     // Ideally, `selectTruthOrDare` timeout should also be handled.
+                                     // A more robust solution would involve an explicit "skip turn" action.
+                                      submitAnswer(roomId, "Time ran out choosing question.", false);
                                  }
                             }
                         }
@@ -319,11 +312,14 @@ export default function RoomPage() {
         </main>
       </div>
 
-      {isLoadingModeration && (
+      {(isLoadingModeration || isLoadingQuestion) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-card p-6 rounded-lg shadow-xl flex items-center space-x-3">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <p className="text-lg">Processing AI Moderation...</p>
+            <p className="text-lg">
+                {isLoadingQuestion && "AI is crafting your question..."}
+                {isLoadingModeration && !isLoadingQuestion && "AI Moderating message..."}
+            </p>
           </div>
         </div>
       )}
