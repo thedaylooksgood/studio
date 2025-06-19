@@ -13,19 +13,6 @@ export function generateRoomCode(): string {
   return code;
 }
 
-// Basic profanity filter (expand with more words as needed)
-const BLOCKED_WORDS = ['fuck', 'shit', 'bitch', 'asshole', 'cunt', 'dick', 'pussy', /* add more offensive terms */]; 
-
-export function filterContent(input: string): string {
-  const wordRegex = /\b\w+\b/g; // Matches whole words
-  return input.replace(wordRegex, (match) => {
-    if (BLOCKED_WORDS.includes(match.toLowerCase())) {
-      return '█'.repeat(match.length);
-    }
-    return match;
-  });
-}
-
 export function getShuffledPlayers(players: Player[]): Player[] {
   return [...players].sort(() => Math.random() - 0.5);
 }
@@ -52,9 +39,7 @@ export function getInitialQuestions(mode: GameMode): { truths: Question[], dares
     case 'moderate':
       content = moderateContent;
       break;
-    // case 'extreme': // Extreme mode removed
-    //   return { truths: [], dares: [] }; 
-    default: // Fallback to minimal if mode is unrecognized
+    default: 
       console.warn(`Unknown game mode: ${mode}, defaulting to minimal.`);
       content = minimalContent;
   }

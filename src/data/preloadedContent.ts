@@ -3,54 +3,54 @@ import type { PreloadedContent } from '@/types/game';
 
 export const minimalContent: PreloadedContent = {
   truths: [
-    "What's a secret turn-on you have that might surprise people?",
-    "Describe your ideal passionate kiss in three words.",
-    "What's the naughtiest thought you've had about someone in this room (or a celebrity if no one here)?",
-    "If you had a 'hall pass' for one celebrity, who would it be and what's the first thing you'd do?",
-    "What's something you find incredibly sexy that most people might not?",
-    "Have you ever sent a suggestive text or photo you later regretted, or were proud of?",
-    "What's your favorite body part on a potential partner and why?",
-    "What song instantly puts you in a 'mood'?",
-    "What's the most daring place you've ever thought about getting frisky?",
-    "If you could whisper something risqué to anyone right now, who would it be and what would you say?"
+    "What's the sluttiest thing you've ever done or fantasized about doing?",
+    "Describe the last time you were incredibly horny. What triggered it, and what did you do about it?",
+    "If you could have a no-strings-attached night with anyone in this room, who would it be and what's your first explicit move?",
+    "What's your absolute favorite sex position and why does it make you feel so damn good?",
+    "Have you ever sent nudes? If yes, to how many people and what was their reaction? If no, what would it take for you to send one?",
+    "What's the kinkiest, most taboo thought you've had this week? Don't hold back.",
+    "How many sexual partners have you had? Be brutally honest; we're all friends here.",
+    "What's an instant turn-on for you that gets you dripping wet or rock hard in seconds?",
+    "Describe the most adventurous or public place you've had sex, or where you're dying to do it.",
+    "Rate your current horniness level from 1 to 10 (10 being 'about to explode'). Explain your rating in detail."
   ],
   dares: [
-    "Send a flirty emoji (like 😈 or 😏) to the third contact in your phone without context.",
-    "Describe your 'type' using only suggestive adjectives.",
-    "Whisper something a little naughty to the person on your right (they don't have to share).",
-    "Do your best seductive walk across the room and back.",
-    "Lightly trace a shape on the back of the person to your left's hand with your finger.",
-    "Give a 10-second smoldering look to someone across the room.",
-    "Demonstrate how you'd subtly flirt with someone at a bar using only eye contact and a smile.",
-    "Pick a player. For the next 5 minutes, you have to subtly try to make them blush whenever you talk to them.",
-    "Strike a pose you think is incredibly hot for 10 seconds.",
-    "Share a 'PG-13' fantasy you've had."
+    "Give someone in the room a lap dance for a full minute. Make it sloppy and unforgettable.",
+    "Send a sext to the last person you texted, starting with 'I'm so incredibly horny for your body right now...'",
+    "Describe your ideal orgy in vivid detail. If you had to pick three people from this room to join, who are they and why?",
+    "Take off one item of clothing. Your choice, but make the reveal as sexy and teasing as possible.",
+    "Whisper your absolute dirtiest sexual fantasy into the ear of the person to your right. No censoring.",
+    "Demonstrate your most convincing orgasm face and sounds. Bonus points for realism.",
+    "Let the group choose a body part (e.g., neck, inner thigh, stomach). You have to let another player (chosen by the group) kiss or lick it for 20 seconds.",
+    "Moan suggestively and loudly every time someone says your name for the next full round of the game.",
+    "Show the group your most seductive 'fuck me' eyes and hold the gaze for 10 seconds.",
+    "Choose a player. For the rest of the game, you have to call them 'Daddy/Mommy' or another kinky pet name of their choice."
   ],
 };
 
 export const moderateContent: PreloadedContent = {
   truths: [
-    "What's the wildest or most unexpected place you've ever fantasized about getting intimate?",
-    "Have you ever used a dating app purely for a physical encounter? How did it go?",
-    "What's your 'go-to' move or line to turn up the heat with someone you're interested in?",
-    "Describe a sexual fantasy you've been too shy to share with a partner, or one you'd love to try.",
-    "What's the most embarrassing thing that's happened to you during an intimate moment?",
-    "Who in this room (or mutual acquaintance) do you think would be the most adventurous in bed, and why?",
-    "What's a non-obvious physical feature you find incredibly attractive on someone?",
-    "Have you ever had a 'friends with benefits' situation? Spill some (anonymous) details.",
-    "What's your opinion on public displays of affection – how far is too far, or not far enough?",
-    "What's a specific sexual act or scenario that you find overrated or underrated?"
+    "What's the most depraved or taboo sexual act you've ever fantasized about or participated in? Spare no details.",
+    "Describe in graphic detail your perfect 'slutty weekend' itinerary from start to finish.",
+    "What's the one sexual thing you'd try if there were absolutely no consequences, judgments, or limits?",
+    "Have you ever filmed yourself during sex or masturbation? If so, what did you do with the footage? Would you share it with a partner?",
+    "What's your 'guilty pleasure' porn category, and what specifically about it gets you off?",
+    "If you were to objectify someone in this room purely for your sexual pleasure, who would it be and exactly how would you 'use' them?",
+    "What's the highest number of people you've been sexual with in a single 24-hour period? What were the circumstances?",
+    "What's a sexual limit or boundary you've pushed (or had pushed by someone else), and how did that experience truly make you feel?",
+    "Describe a specific taste, smell, or sound that makes you instantly horny and why.",
+    "What's the sluttiest, most revealing outfit you own? Describe it in detail, or if you're brave, show a picture."
   ],
   dares: [
-    "Give someone in the room (of your choice) a 20-second sensual shoulder rub or hand massage.",
-    "Take a 'suggestive' selfie (can be playful or actually hot) and show it to the group, or send it to one player of your choice.",
-    "Describe your ideal steamy make-out session – setting, intensity, soundtrack.",
-    "Write a short, anonymous 'missed connection' ad for someone in the room and read it aloud.",
-    "For the next round, every time you speak, you must start or end your sentence with a seductive purr or growl.",
-    "Choose a player. You must maintain intense eye contact with them for a full minute without breaking or laughing.",
-    "Re-enact a famous romantic or steamy movie scene with an object (like a pillow) as your partner.",
-    "Give a compliment to three different players, focusing on something you genuinely find attractive or alluring about them.",
-    "Select a player and give them a 'dare' coupon they can redeem from you later tonight (make it spicy but consensual).",
-    "Truth or Dare a player: You have to lick a dab of whipped cream (or similar) off their finger, or they have to do it to you."
+    "Let the person to your left write something explicitly slutty on a visible part of your body with a marker. They choose the phrase and location.",
+    "Use a piece of food (e.g., whipped cream, chocolate sauce, a piece of fruit) suggestively on yourself or another consenting player. Make it a show.",
+    "You are blindfolded. Identify three different players by only touching their faces, hair, and hands. Make your touches overtly sensual and lingering.",
+    "Simulate giving incredibly enthusiastic head to a bottle or similar object for one full minute. Be convincing and audible.",
+    "Dirty talk to a pillow for 60 seconds as if it's the hottest person you've ever encountered and you're trying to get them into bed.",
+    "The group picks two players (you can volunteer to be one). These two players have to make out passionately and with tongue for at least 90 seconds.",
+    "Remove an item of clothing (e.g., shirt, bra, pants) and use it to seductively 'clean' or 'polish' an object in the room for 30 seconds.",
+    "Roleplay the opening of an explicit porn scene with another player for 60 seconds. The group can suggest the scenario. Make it cringey and horny.",
+    "Allow another player (of the group's choosing) to give you a hickey anywhere they choose on your neck or upper chest (with your consent for the spot).",
+    "Swap a significant piece of clothing (e.g., shirt for shirt, pants for pants) with another player of the group's choice and wear it provocatively for the next two rounds."
   ],
 };
