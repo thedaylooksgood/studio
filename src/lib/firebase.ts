@@ -1,6 +1,6 @@
 
-import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getDatabase } from 'firebase/database';
+import { initializeApp, getApp, getApps, type FirebaseApp } from 'firebase/app';
+import { getDatabase, type Database } from 'firebase/database';
 
 const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
 const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN;
@@ -11,20 +11,25 @@ const messagingSenderId = process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID;
 const appId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID;
 const measurementId = process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID;
 
+console.log("Attempting to load Firebase config from environment variables:");
+console.log("NEXT_PUBLIC_FIREBASE_API_KEY:", apiKey ? "Loaded" : "MISSING or empty");
+console.log("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:", authDomain ? "Loaded" : "MISSING or empty");
+console.log("NEXT_PUBLIC_FIREBASE_DATABASE_URL:", databaseURL ? databaseURL : "MISSING or empty");
+console.log("NEXT_PUBLIC_FIREBASE_PROJECT_ID:", projectId ? "Loaded" : "MISSING or empty");
+// Add logs for other variables if needed for debugging
+
 if (!databaseURL) {
   console.error(
-    'CRITICAL Firebase Configuration Error: NEXT_PUBLIC_FIREBASE_DATABASE_URL is not defined in your .env file. ' +
-    'Please ensure it is set correctly. It should look like: ' +
-    'https://<YOUR-PROJECT-ID>.firebaseio.com or https://<YOUR-PROJECT-ID>-default-rtdb.<REGION>.firebasedatabase.app. ' +
-    'You can find this value in your Firebase project settings.'
+    'CRITICAL Firebase Configuration Error: NEXT_PUBLIC_FIREBASE_DATABASE_URL is not defined. ' +
+    'This is required for Realtime Database. Please ensure it is set in your environment variables (e.g., .env file or Vercel project settings). ' +
+    'It should look like: https://<YOUR-PROJECT-ID>.firebaseio.com or https://<YOUR-PROJECT-ID>-default-rtdb.<REGION>.firebasedatabase.app.'
   );
 } else if (!databaseURL.startsWith('https://') || !(databaseURL.includes('.firebaseio.com') || databaseURL.includes('.firebasedatabase.app'))) {
   console.error(
     `CRITICAL Firebase Configuration Error: NEXT_PUBLIC_FIREBASE_DATABASE_URL ("${databaseURL}") appears to be malformed. ` +
-    'Please ensure it is a valid Firebase Realtime Database URL from your Firebase project settings.'
+    'Please ensure it is a valid Firebase Realtime Database URL.'
   );
 }
-
 
 const firebaseConfig = {
   apiKey: apiKey,
@@ -37,24 +42,41 @@ const firebaseConfig = {
   measurementId: measurementId,
 };
 
-// Initialize Firebase
-let app;
-if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApp();
-}
+let app: FirebaseApp | undefined;
+let database: Database | undefined;
 
-let database;
 try {
-  database = getDatabase(app);
+  if (!getApps().length) {
+    console.log("Initializing new Firebase app...");
+    app = initializeApp(firebaseConfig);
+    console.log("Firebase app initialized successfully.");
+  } else {
+    console.log("Getting existing Firebase app...");
+    app = getApp();
+    console.log("Existing Firebase app retrieved.");
+  }
 } catch (error) {
-  console.error("Firebase Database Initialization Error. This likely means your NEXT_PUBLIC_FIREBASE_DATABASE_URL is still incorrect even if it passed basic checks.", error);
-  // Depending on how critical this is, you might want to re-throw or handle differently
-  // For now, we'll let the app proceed and Firebase SDK might show further errors.
-  // If database is crucial for app start, you might throw here:
-  // throw new Error("Failed to initialize Firebase Database. Check NEXT_PUBLIC_FIREBASE_DATABASE_URL.");
+  console.error("CRITICAL Firebase App Initialization Error:", error);
+  console.error("This usually means your Firebase config (apiKey, authDomain, projectId, etc.) is incorrect or missing critical values.");
 }
 
+if (app && databaseURL) { // Only try to get database if app initialized and databaseURL looks plausible
+  try {
+    console.log("Getting Firebase Realtime Database instance...");
+    database = getDatabase(app);
+    console.log("Firebase Realtime Database instance retrieved successfully.");
+  } catch (error) {
+    console.error("CRITICAL Firebase Database Initialization Error:", error);
+    console.error("This typically occurs if NEXT_PUBLIC_FIREBASE_DATABASE_URL is malformed or missing, even if other config seems okay.");
+    console.error("Received databaseURL for getDatabase:", databaseURL);
+  }
+} else {
+  if (!app) {
+    console.error("Firebase app object is not available. Cannot initialize Realtime Database.");
+  }
+  if (!databaseURL) {
+    console.error("DATABASE_URL is missing or invalid. Cannot initialize Realtime Database.");
+  }
+}
 
 export { app, database };
