@@ -28,7 +28,7 @@ export function AgeGate({ onConfirmed }: { onConfirmed: () => void }) {
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[425px] bg-card border-accent" aria-labelledby="age-gate-title" aria-describedby="age-gate-description">
+      <DialogContent className="sm:max-w-[425px] bg-card border-accent">
         <DialogHeader>
           <DialogTitle id="age-gate-title" className="text-2xl font-headline text-primary flex items-center">
             <ShieldAlert className="w-8 h-8 mr-2 text-accent" />
