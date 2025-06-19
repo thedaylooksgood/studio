@@ -36,10 +36,11 @@ export default function JoinRoomPage() {
       toast({ title: "Error", description: "Room not found. Check the code and try again.", variant: "destructive" });
       return;
     }
-    if (roomExists.gameState !== 'waiting') {
-        toast({ title: "Error", description: "This game has already started. You cannot join at this time.", variant: "destructive"});
-        return;
-    }
+    // Removed gameState check to allow joining mid-game
+    // if (roomExists.gameState !== 'waiting') {
+    //     toast({ title: "Error", description: "This game has already started. You cannot join at this time.", variant: "destructive"});
+    //     return;
+    // }
     if (roomExists.players.find(p => p.nickname.toLowerCase() === trimmedNickname.toLowerCase())) {
         toast({ title: "Error", description: "This nickname is already taken in the room.", variant: "destructive"});
         return;
@@ -48,7 +49,7 @@ export default function JoinRoomPage() {
 
     const player = joinRoom(trimmedRoomCode, trimmedNickname);
     if (player) {
-      router.push(`/room/${trimmedRoomCode}`);
+      router.push(`/room/${trimmedRoomCode}?playerId=${player.id}`);
     }
     // joinRoom already handles toasts for errors like room not found or nickname taken
   };

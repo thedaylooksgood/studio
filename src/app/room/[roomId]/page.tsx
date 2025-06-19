@@ -40,17 +40,11 @@ export default function RoomPage() {
     if (storedPlayerId) {
       setLocalPlayerId(storedPlayerId);
     } else {
-      // This page should only be accessed after creating/joining a room,
-      // where player ID is set. If accessed directly, redirect.
-      // Or, if the room context has a single player and it's the host, assume that's the local player.
       const room = getCurrentRoom(roomId);
       if (room && room.players.length === 1 && room.hostId === room.players[0].id) {
         setLocalPlayerId(room.hostId);
         localStorage.setItem(`riskyRoomsPlayerId_${roomId}`, room.hostId);
       } else if (room && room.players.length > 0) {
-        // If multiple players and no local ID, means user refreshed or direct nav
-        // Potentially show a player selection/rejoin prompt or redirect
-        // For now, if there's a player in URL from join redirect, use that.
         const searchParams = new URLSearchParams(window.location.search);
         const playerIdFromQuery = searchParams.get('playerId');
         if (playerIdFromQuery && room.players.find(p => p.id === playerIdFromQuery)) {
@@ -70,10 +64,9 @@ export default function RoomPage() {
   const gamePlayerWhoseTurn = room?.currentPlayerId ? getPlayer(roomId, room.currentPlayerId) : undefined;
 
   useEffect(() => {
-    if (!room && !isLoadingModeration) { // Check isLoading to prevent redirect during initial load if room is briefly undefined
-      // Allow some time for context to load
+    if (!room && !isLoadingModeration) { 
       const timer = setTimeout(() => {
-        if(!getCurrentRoom(roomId)) { // re-check
+        if(!getCurrentRoom(roomId)) { 
             toast({ title: "Room not found", description: "This room doesn't exist or has been closed.", variant: "destructive" });
             router.push('/');
         }
@@ -102,7 +95,7 @@ export default function RoomPage() {
   const [answerText, setAnswerText] = useState("");
 
   const handleOpenAnswerModal = () => {
-    setAnswerText(""); // Clear previous answer
+    setAnswerText(""); 
     setIsAnswerModalOpen(true);
   };
 
@@ -116,7 +109,7 @@ export default function RoomPage() {
   };
 
   const handleSubmitDareResult = (isSuccess: boolean) => {
-     if (dareAnswerText.trim() === "" && !isSuccess) { // Allow empty text if successful for simple dares
+     if (dareAnswerText.trim() === "" && !isSuccess) { 
       toast({title: "Empty Result", description: "Please describe the result of the dare.", variant: "destructive"});
       return;
     }
@@ -184,14 +177,14 @@ export default function RoomPage() {
              <Card className="bg-primary/10 border-primary">
                 <CardHeader><CardTitle className="text-xl font-headline">Waiting for Players</CardTitle></CardHeader>
                 <CardContent>
-                    <p className="text-muted-foreground mb-4">The game will begin once the host starts it. Min 2 players needed.</p>
+                    <p className="text-muted-foreground mb-4">The game will begin once the host starts it. Min 1 player needed.</p>
                     {currentPlayer.isHost && (
                         <Button 
                             onClick={() => startGame(roomId)} 
-                            disabled={room.players.length < 2}
+                            disabled={room.players.length < 1}
                             className="w-full bg-accent text-accent-foreground hover:bg-accent/90 animate-button-press"
                         >
-                            <Play className="w-5 h-5 mr-2"/> Start Game ({room.players.length}/2+ players)
+                            <Play className="w-5 h-5 mr-2"/> Start Game ({room.players.length}/1+ player)
                         </Button>
                     )}
                     {!currentPlayer.isHost && <p className="text-sm italic text-primary">Waiting for host to start...</p>}
@@ -267,7 +260,6 @@ export default function RoomPage() {
                     onTimeUp={() => {
                         if(isMyTurn) {
                             toast({title: "Time's Up!", description: "Moving to next player.", variant: "destructive"});
-                            // Auto-fail dare or skip truth
                             submitAnswer(roomId, room.currentQuestion?.type === 'truth' ? "Time ran out (skipped)." : "Time ran out (failed).", false);
                         }
                     }}
@@ -302,4 +294,3 @@ export default function RoomPage() {
     </div>
   );
 }
-
