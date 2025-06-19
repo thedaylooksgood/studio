@@ -229,7 +229,7 @@ export default function RoomPage() {
                         <DialogTitle>Your {room.currentQuestion.type === 'truth' ? 'Truth' : 'Dare Result'}</DialogTitle>
                         <DialogDescription>
                             {room.currentQuestion.type === 'truth' ? "Tell us your truth!" : "What happened with the dare?"}
-                            <p className="font-semibold mt-2">{room.currentQuestion.text}</p>
+                            <div className="font-semibold mt-2">{room.currentQuestion.text}</div>
                         </DialogDescription>
                         </DialogHeader>
                         {room.currentQuestion.type === 'truth' ? (
