@@ -8,17 +8,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useGame } from '@/contexts/GameContext';
-import { ArrowLeft, LogIn } from 'lucide-react';
+import { ArrowLeft, LogIn, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function JoinRoomPage() {
   const [roomCode, setRoomCode] = useState('');
   const [nickname, setNickname] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
   const router = useRouter();
-  const { joinRoom, rooms } = useGame(); // `rooms` to check if room exists
+  const { joinRoom, setActiveRoomId } = useGame();
   const { toast } = useToast();
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
     const trimmedNickname = nickname.trim();
     const trimmedRoomCode = roomCode.trim().toUpperCase();
 
@@ -30,28 +31,17 @@ export default function JoinRoomPage() {
       toast({ title: "Validation Error", description: "Room code must be 6 alphanumeric characters.", variant: "destructive" });
       return;
     }
+    
+    setIsJoining(true);
+    const player = await joinRoom(trimmedRoomCode, trimmedNickname);
+    setIsJoining(false);
 
-    const roomExists = rooms.find(r => r.id === trimmedRoomCode);
-    if (!roomExists) {
-      toast({ title: "Error", description: "Room not found. Check the code and try again.", variant: "destructive" });
-      return;
-    }
-    // Removed gameState check to allow joining mid-game
-    // if (roomExists.gameState !== 'waiting') {
-    //     toast({ title: "Error", description: "This game has already started. You cannot join at this time.", variant: "destructive"});
-    //     return;
-    // }
-    if (roomExists.players.find(p => p.nickname.toLowerCase() === trimmedNickname.toLowerCase())) {
-        toast({ title: "Error", description: "This nickname is already taken in the room.", variant: "destructive"});
-        return;
-    }
-
-
-    const player = joinRoom(trimmedRoomCode, trimmedNickname);
     if (player) {
-      router.push(`/room/${trimmedRoomCode}?playerId=${player.id}`);
+      localStorage.setItem(`riskyRoomsPlayerId_${trimmedRoomCode}`, player.id);
+      setActiveRoomId(trimmedRoomCode); // Start listening to this room
+      router.push(`/room/${trimmedRoomCode}`);
     }
-    // joinRoom already handles toasts for errors like room not found or nickname taken
+    // Error toasts (room not found, nickname taken) are handled within joinRoom context function
   };
 
   return (
@@ -96,10 +86,11 @@ export default function JoinRoomPage() {
           <Button 
             onClick={handleJoinRoom} 
             className="w-full bg-accent hover:bg-accent/90 text-accent-foreground animate-button-press"
-            disabled={nickname.trim().length < 3 || nickname.trim().length > 15 || roomCode.trim().length !== 6 || !/^[A-Z0-9]{6}$/.test(roomCode.trim())}
+            disabled={isJoining || nickname.trim().length < 3 || nickname.trim().length > 15 || roomCode.trim().length !== 6 || !/^[A-Z0-9]{6}$/.test(roomCode.trim())}
             aria-label="Join Room"
             >
-            <LogIn className="mr-2 h-5 w-5" /> Join Room
+            {isJoining ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
+            {isJoining ? 'Joining Room...' : 'Join Room'}
           </Button>
         </CardFooter>
       </Card>

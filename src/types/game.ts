@@ -15,7 +15,7 @@ export interface ChatMessage {
   senderId?: string;
   senderNickname: string;
   text: string;
-  timestamp: Date;
+  timestamp: string; // ISO string
   type: ChatMessageType;
 }
 
@@ -27,7 +27,6 @@ export interface Question {
 
 export type GameState = 'waiting' | 'inProgress' | 'playerChoosing' | 'questionRevealed' | 'awaitingAnswer' | 'gameOver';
 
-// Stores history of question TEXTS asked to each player for each type
 export type PlayerQuestionHistory = Record<string, {
   truths: string[];
   dares: string[];
@@ -46,7 +45,7 @@ export interface Room {
   hostId: string | null;
   round: number;
   timerValue?: number;
-  lastActivity: Date;
+  lastActivity: string; // ISO string
   playerQuestionHistory: PlayerQuestionHistory;
 }
 

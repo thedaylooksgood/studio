@@ -2,261 +2,355 @@
 "use client";
 
 import type { Room, Player, ChatMessage, GameMode, Question, GameState, ChatMessageType, PlayerQuestionHistory } from '@/types/game';
-import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { generateRoomCode, getInitialQuestions as getFallbackQuestions, selectNextPlayer } from '@/lib/gameUtils';
 import { flagMessage, FlagMessageOutput } from '@/ai/flows/flag-message';
 import { generateQuestion, GenerateQuestionInput } from '@/ai/flows/generate-question-flow';
 import { useToast } from '@/hooks/use-toast';
+import { database } from '@/lib/firebase';
+import { ref, set, onValue, update, remove, off, get, serverTimestamp } from 'firebase/database';
 
 interface GameContextType {
-  rooms: Room[];
-  createRoom: (hostNickname: string, mode: GameMode) => string;
-  joinRoom: (roomId: string, playerNickname: string) => Player | null;
-  leaveRoom: (roomId: string, playerId: string) => void;
-  startGame: (roomId: string) => void;
-  selectTruthOrDare: (roomId: string, type: 'truth' | 'dare') => Promise<void>;
-  submitAnswer: (roomId: string, answer: string, isDareSuccessful?: boolean) => void;
-  addChatMessage: (roomId: string, senderId: string, senderNickname: string, text: string, type?: ChatMessageType) => Promise<void>;
-  getCurrentRoom: (roomId: string) => Room | undefined;
-  getPlayer: (roomId: string, playerId: string) => Player | undefined;
-  nextTurn: (roomId: string) => void;
+  activeRoom: Room | null;
+  activeRoomId: string | null;
+  setActiveRoomId: (roomId: string | null) => void;
+  createRoom: (hostNickname: string, mode: GameMode) => Promise<string | null>;
+  joinRoom: (roomId: string, playerNickname: string) => Promise<Player | null>;
+  leaveRoom: () => Promise<void>; // Simplified, operates on activeRoom
+  startGame: () => Promise<void>; // Simplified
+  selectTruthOrDare: (type: 'truth' | 'dare') => Promise<void>; // Simplified
+  submitAnswer: (answer: string, isDareSuccessful?: boolean) => Promise<void>; // Simplified
+  addChatMessage: (senderId: string, senderNickname: string, text: string, type?: ChatMessageType) => Promise<void>; // Simplified
+  getPlayer: (playerId: string) => Player | undefined; // Operates on activeRoom
   isLoadingModeration: boolean;
   isLoadingQuestion: boolean;
+  isLoadingRoom: boolean;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
 export const GameProvider = ({ children }: { children: ReactNode }) => {
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [activeRoom, setActiveRoom] = useState<Room | null>(null);
+  const [activeRoomId, setActiveRoomIdState] = useState<string | null>(null);
   const { toast } = useToast();
   const router = useRouter();
   const [isLoadingModeration, setIsLoadingModeration] = useState(false);
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(false);
+  const [isLoadingRoom, setIsLoadingRoom] = useState(false);
+  const roomListenerRef = useRef<any>(null);
 
-  const getCurrentRoom = useCallback((roomId: string) => {
-    return rooms.find(r => r.id === roomId);
-  }, [rooms]);
 
-  const getPlayer = useCallback((roomId: string, playerId: string) => {
-    const room = getCurrentRoom(roomId);
-    return room?.players.find(p => p.id === playerId);
-  }, [getCurrentRoom]);
+  const setActiveRoomId = useCallback((roomId: string | null) => {
+    setIsLoadingRoom(true);
+    setActiveRoom(null); // Clear previous room data
+    if (roomListenerRef.current && activeRoomId) {
+        const oldRoomRef = ref(database, `rooms/${activeRoomId}`);
+        off(oldRoomRef, 'value', roomListenerRef.current);
+        roomListenerRef.current = null;
+    }
+    setActiveRoomIdState(roomId);
+  }, [activeRoomId]);
 
-  const nextTurn = useCallback((roomId: string) => {
-    setRooms(prevRooms => {
-      const roomIndex = prevRooms.findIndex(r => r.id === roomId);
-      if (roomIndex === -1) return prevRooms;
+  useEffect(() => {
+    if (!activeRoomId) {
+      setActiveRoom(null);
+      setIsLoadingRoom(false);
+      return;
+    }
 
-      const room = prevRooms[roomIndex];
-      if (room.players.length === 0) return prevRooms;
-
-      const nextPlayer = selectNextPlayer(room.players, room.currentPlayerId);
-
-      let newRound = room.round;
-      if (nextPlayer && room.players.indexOf(nextPlayer) === 0 && room.currentPlayerId !== nextPlayer.id && room.round > 0) {
-          newRound = room.round + 1;
+    setIsLoadingRoom(true);
+    const roomRef = ref(database, `rooms/${activeRoomId}`);
+    
+    roomListenerRef.current = onValue(roomRef, (snapshot) => {
+      const roomData = snapshot.val();
+      if (roomData) {
+        // Convert chat message timestamps if necessary
+        const processedRoomData = {
+          ...roomData,
+          chatMessages: (roomData.chatMessages || []).map((msg: ChatMessage) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp).toISOString() // Ensure it's a string for consistency
+          })),
+          lastActivity: new Date(roomData.lastActivity).toISOString(),
+        };
+        setActiveRoom(processedRoomData as Room);
+      } else {
+        setActiveRoom(null);
+        // Potentially toast that room doesn't exist or was removed
+        // toast({ title: "Room Disconnected", description: "The room you were in is no longer available.", variant: "destructive" });
+        // router.push('/'); // Or handle differently
       }
-
-      return prevRooms.map((r, idx) => {
-        if (idx === roomIndex) {
-          if (!nextPlayer) {
-             console.error("Next player selection failed with existing players.");
-             return { ...r, gameState: 'gameOver' as GameState, chatMessages: [...r.chatMessages, {id: Date.now().toString(), senderNickname: "System", text: "Game Over! Could not determine next player.", timestamp: new Date(), type: 'system'}] };
-          }
-          return {
-            ...r,
-            currentPlayerId: nextPlayer.id,
-            gameState: 'playerChoosing' as GameState,
-            currentQuestion: null,
-            round: newRound,
-            chatMessages: [...r.chatMessages, { id: Date.now().toString(), senderNickname: 'System', text: `It's ${nextPlayer.nickname}'s turn. Choose Truth or Dare.`, timestamp: new Date(), type: 'turnChange' as ChatMessageType}]
-          };
-        }
-        return r;
-      });
+      setIsLoadingRoom(false);
+    }, (error) => {
+      console.error("Firebase read failed: " + error.message);
+      toast({ title: "Connection Error", description: "Failed to connect to the game room.", variant: "destructive" });
+      setIsLoadingRoom(false);
+      setActiveRoom(null);
     });
-  }, [/* setRooms is stable, selectNextPlayer is pure */]);
 
-  const createRoom = useCallback((hostNickname: string, mode: GameMode): string => {
+    return () => {
+      if (roomListenerRef.current) {
+        off(roomRef, 'value', roomListenerRef.current);
+        roomListenerRef.current = null;
+      }
+    };
+  }, [activeRoomId, toast, router]);
+
+
+  const getPlayer = useCallback((playerId: string): Player | undefined => {
+    return activeRoom?.players.find(p => p.id === playerId);
+  }, [activeRoom]);
+
+  const createRoom = useCallback(async (hostNickname: string, mode: GameMode): Promise<string | null> => {
     const newRoomId = generateRoomCode();
-    const hostPlayer: Player = { id: Date.now().toString(), nickname: hostNickname, isHost: true, score: 0 };
+    const hostPlayerId = Date.now().toString();
+    const hostPlayer: Player = { id: hostPlayerId, nickname: hostNickname, isHost: true, score: 0 };
     const fallbackContent = getFallbackQuestions(mode);
 
-    const newRoom: Room = {
+    const initialPlayerQuestionHistory: PlayerQuestionHistory = {
+      [hostPlayer.id]: { truths: [], dares: [] }
+    };
+    
+    const newRoomData: Room = {
       id: newRoomId,
       mode,
       players: [hostPlayer],
       currentPlayerId: hostPlayer.id,
       gameState: 'waiting',
-      truths: fallbackContent.truths,
-      dares: fallbackContent.dares,
+      truths: fallbackContent.truths, // Storing for potential fallback use, not primary
+      dares: fallbackContent.dares,   // Storing for potential fallback use
       currentQuestion: null,
-      chatMessages: [{ id: Date.now().toString(), senderNickname: 'System', text: `${hostNickname} created the room! Mode: ${mode}. Room code: ${newRoomId}`, timestamp: new Date(), type: 'system' }],
+      chatMessages: [{ id: Date.now().toString(), senderNickname: 'System', text: `${hostNickname} created the room! Mode: ${mode}. Room code: ${newRoomId}`, timestamp: new Date().toISOString(), type: 'system' }],
       hostId: hostPlayer.id,
       round: 0,
-      lastActivity: new Date(),
-      playerQuestionHistory: {
-        [hostPlayer.id]: { truths: [], dares: [] }
-      },
+      lastActivity: new Date().toISOString(), // serverTimestamp() is better here
+      playerQuestionHistory: initialPlayerQuestionHistory,
     };
-    setRooms(prevRooms => [...prevRooms, newRoom]);
-    return newRoomId;
-  }, [/* setRooms is stable, generateRoomCode/getFallbackQuestions are pure */]);
 
-  const joinRoom = useCallback((roomId: string, playerNickname: string): Player | null => {
-    let joinedPlayer: Player | null = null;
-    setRooms(prevRooms => {
-      const roomIndex = prevRooms.findIndex(r => r.id === roomId);
-      if (roomIndex === -1) {
+    try {
+      const roomRef = ref(database, `rooms/${newRoomId}`);
+      await set(roomRef, newRoomData);
+      // setActiveRoomIdState(newRoomId); // Listener will pick it up, no need to set activeRoom directly
+      return newRoomId;
+    } catch (error) {
+      console.error("Error creating room in RTDB:", error);
+      toast({ title: "Error Creating Room", description: "Could not save room to database.", variant: "destructive" });
+      return null;
+    }
+  }, [toast]);
+
+  const joinRoom = useCallback(async (roomIdToJoin: string, playerNickname: string): Promise<Player | null> => {
+    const roomRef = ref(database, `rooms/${roomIdToJoin}`);
+    try {
+      const snapshot = await get(roomRef);
+      if (!snapshot.exists()) {
         toast({ title: "Error", description: "Room not found.", variant: "destructive" });
-        return prevRooms;
+        return null;
       }
 
-      const currentRoom = prevRooms[roomIndex];
-      if (currentRoom.players.find(p => p.nickname.toLowerCase() === playerNickname.toLowerCase())) {
+      const currentRoomData = snapshot.val() as Room;
+      if (currentRoomData.players.find(p => p.nickname.toLowerCase() === playerNickname.toLowerCase())) {
         toast({ title: "Error", description: "Nickname already taken in this room.", variant: "destructive" });
-        return prevRooms;
+        return null;
       }
 
-      const newPlayer: Player = { id: Date.now().toString(), nickname: playerNickname, isHost: false, score: 0 };
-      joinedPlayer = newPlayer;
+      const newPlayerId = Date.now().toString();
+      const newPlayer: Player = { id: newPlayerId, nickname: playerNickname, isHost: false, score: 0 };
+      
+      const updates: any = {};
+      const playerPath = `players/${currentRoomData.players.length}`; // Add to end of players array
+      updates[playerPath] = newPlayer;
+      
+      const chatMessageId = Date.now().toString();
+      const chatMessagePath = `chatMessages/${currentRoomData.chatMessages.length}`;
+      updates[chatMessagePath] = { id: chatMessageId, senderNickname: 'System', text: `${playerNickname} joined the room!`, timestamp: new Date().toISOString(), type: 'playerJoin'};
+      
+      const playerHistoryPath = `playerQuestionHistory/${newPlayerId}`;
+      updates[playerHistoryPath] = { truths: [], dares: [] };
+      updates['lastActivity'] = new Date().toISOString();
 
-      const updatedRooms = prevRooms.map(r =>
-        r.id === roomId
-        ? {
-            ...r,
-            players: [...r.players, newPlayer],
-            chatMessages: [...r.chatMessages, { id: Date.now().toString(), senderNickname: 'System', text: `${playerNickname} joined the room!`, timestamp: new Date(), type: 'playerJoin'}],
-            playerQuestionHistory: {
-              ...r.playerQuestionHistory,
-              [newPlayer.id]: { truths: [], dares: [] }
-            }
-          }
-        : r
-      );
-      return updatedRooms;
-    });
-    return joinedPlayer;
-  }, [toast /* setRooms is stable */]);
 
-  const leaveRoom = useCallback((roomId: string, playerId: string) => {
-    setRooms(prevRooms => {
-      const room = prevRooms.find(r => r.id === roomId);
-      if (!room) return prevRooms;
+      await update(roomRef, updates);
+      // setActiveRoomIdState(roomIdToJoin); // Let navigation trigger this
+      return newPlayer;
 
-      const playerLeaving = room.players.find(p => p.id === playerId);
-      const remainingPlayers = room.players.filter(p => p.id !== playerId);
+    } catch (error) {
+      console.error("Error joining room:", error);
+      toast({ title: "Join Error", description: "Could not join the room.", variant: "destructive" });
+      return null;
+    }
+  }, [toast]);
 
-      const newPlayerQuestionHistory = { ...room.playerQuestionHistory };
-      delete newPlayerQuestionHistory[playerId];
+  const leaveRoom = useCallback(async () => {
+    if (!activeRoom || !activeRoomId) return;
+
+    const localPlayerId = localStorage.getItem(`riskyRoomsPlayerId_${activeRoomId}`);
+    if (!localPlayerId) return;
+
+    const roomRef = ref(database, `rooms/${activeRoomId}`);
+    
+    try {
+      // Fetch current room state to make decisions
+      const snapshot = await get(roomRef);
+      if (!snapshot.exists()) return; // Room already gone
+
+      let currentRoomData = snapshot.val() as Room;
+      const playerLeaving = currentRoomData.players.find(p => p.id === localPlayerId);
+      if (!playerLeaving) return;
+
+      const remainingPlayers = currentRoomData.players.filter(p => p.id !== localPlayerId);
 
       if (remainingPlayers.length === 0) {
-        toast({ title: "Room Closed", description: "The last player left, room closed."});
+        await remove(roomRef);
+        toast({ title: "Room Closed", description: "The last player left, room closed." });
+        setActiveRoomIdState(null); // Clear active room
         router.push('/');
-        return prevRooms.filter(r => r.id !== roomId);
+        return;
       }
+      
+      const updates: any = {};
+      updates.players = remainingPlayers;
+      
+      let newHostId = currentRoomData.hostId;
+      if (currentRoomData.hostId === localPlayerId) {
+        newHostId = remainingPlayers[0].id;
+        updates.hostId = newHostId;
+        // Ensure the new host player object reflects isHost: true
+        updates.players = remainingPlayers.map(p => p.id === newHostId ? { ...p, isHost: true } : p);
+      }
+      
+      let newCurrentPlayerId = currentRoomData.currentPlayerId;
+      let newGameState = currentRoomData.gameState;
+      let newCurrentQuestion = currentRoomData.currentQuestion;
+      let turnChangeMessage: ChatMessage | null = null;
 
-      let newCurrentPlayerId = room.currentPlayerId;
-      let newHostId = room.hostId;
-      let newGameState = room.gameState;
-
-      if (room.currentPlayerId === playerId && room.gameState !== 'waiting' && room.gameState !== 'gameOver') {
-        const nextPlayerAfterLeave = selectNextPlayer(remainingPlayers, null);
+      if (currentRoomData.currentPlayerId === localPlayerId && currentRoomData.gameState !== 'waiting' && currentRoomData.gameState !== 'gameOver') {
+        const nextPlayerAfterLeave = selectNextPlayer(remainingPlayers, null); // Pass remaining players
         newCurrentPlayerId = nextPlayerAfterLeave?.id || remainingPlayers[0]?.id || null;
-        if(newCurrentPlayerId){
+        
+        if (newCurrentPlayerId) {
           newGameState = 'playerChoosing';
-        } else if (remainingPlayers.length > 0 && room.gameState !== 'waiting') {
-          newGameState = 'playerChoosing';
-          newCurrentPlayerId = remainingPlayers[0].id;
+          newCurrentQuestion = null;
+          const nextPlayerNickname = remainingPlayers.find(p => p.id === newCurrentPlayerId)?.nickname || 'Next Player';
+          turnChangeMessage = { id: (Date.now() + 1).toString(), senderNickname: 'System', text: `It's now ${nextPlayerNickname}'s turn. Choose Truth or Dare.`, timestamp: new Date().toISOString(), type: 'turnChange' };
         } else {
           newGameState = 'gameOver';
         }
+        updates.currentPlayerId = newCurrentPlayerId;
+        updates.gameState = newGameState;
+        updates.currentQuestion = newCurrentQuestion;
+      }
+      
+      const leaveMessage: ChatMessage = { id: Date.now().toString(), senderNickname: 'System', text: `${playerLeaving.nickname} left the room. ${newHostId !== currentRoomData.hostId ? `${remainingPlayers.find(p => p.id === newHostId)?.nickname} is the new host.` : ''}`, timestamp: new Date().toISOString(), type: 'playerLeave' };
+      updates.chatMessages = [...currentRoomData.chatMessages, leaveMessage];
+      if (turnChangeMessage) {
+        updates.chatMessages.push(turnChangeMessage);
+      }
+      
+      const newPlayerQuestionHistory = { ...currentRoomData.playerQuestionHistory };
+      delete newPlayerQuestionHistory[localPlayerId];
+      updates.playerQuestionHistory = newPlayerQuestionHistory;
+      updates.lastActivity = new Date().toISOString();
+
+      await update(roomRef, updates);
+      // If the current user is the one leaving:
+      if (localPlayerId === (getPlayer(localPlayerId)?.id)) { // Check if it was this user
+         setActiveRoomIdState(null); // Stop listening
+         router.push('/');
       }
 
-      if (room.hostId === playerId && remainingPlayers.length > 0) {
-        newHostId = remainingPlayers[0].id;
-         remainingPlayers[0].isHost = true;
+    } catch (error) {
+      console.error("Error leaving room:", error);
+      toast({ title: "Leave Error", description: "Could not leave the room.", variant: "destructive" });
+    }
+  }, [activeRoom, activeRoomId, toast, router, getPlayer]);
+
+  const startGame = useCallback(async () => {
+    if (!activeRoom || !activeRoomId || activeRoom.gameState !== 'waiting') return;
+    if (activeRoom.players.length < 1) {
+      toast({ title: "Cannot Start Game", description: "Need at least 1 player to start.", variant: "destructive" });
+      return;
+    }
+
+    const roomRef = ref(database, `rooms/${activeRoomId}`);
+    try {
+      const firstPlayer = activeRoom.players[Math.floor(Math.random() * activeRoom.players.length)];
+      const updates: any = {};
+      updates.gameState = 'playerChoosing';
+      updates.currentPlayerId = firstPlayer.id;
+      updates.round = 1;
+      updates.lastActivity = new Date().toISOString();
+      
+      const startMessage: ChatMessage = { id: Date.now().toString(), senderNickname: 'System', text: `Game started! It's ${firstPlayer.nickname}'s turn.`, timestamp: new Date().toISOString(), type: 'system' };
+      const turnMessage: ChatMessage = { id: (Date.now() + 1).toString(), senderNickname: 'System', text: `${firstPlayer.nickname}, choose Truth or Dare.`, timestamp: new Date().toISOString(), type: 'turnChange' };
+      updates.chatMessages = [...activeRoom.chatMessages, startMessage, turnMessage];
+
+      await update(roomRef, updates);
+
+    } catch (error) {
+      console.error("Error starting game:", error);
+      toast({ title: "Start Game Error", description: "Could not start the game.", variant: "destructive" });
+    }
+  }, [activeRoom, activeRoomId, toast]);
+
+  const nextTurn = useCallback(async () => {
+    if (!activeRoom || !activeRoomId || activeRoom.players.length === 0) return;
+
+    const roomRef = ref(database, `rooms/${activeRoomId}`);
+    try {
+      const nextPlayer = selectNextPlayer(activeRoom.players, activeRoom.currentPlayerId);
+      if (!nextPlayer) {
+        await update(roomRef, { 
+            gameState: 'gameOver', 
+            chatMessages: [...activeRoom.chatMessages, {id: Date.now().toString(), senderNickname: "System", text: "Game Over! Could not determine next player.", timestamp: new Date().toISOString(), type: 'system'}],
+            lastActivity: new Date().toISOString()
+        });
+        return;
       }
 
-      return prevRooms.map(r =>
-        r.id === roomId
-        ? {
-            ...r,
-            players: remainingPlayers.map(p => p.id === newHostId ? {...p, isHost: true} : {...p, isHost: false}),
-            currentPlayerId: newCurrentPlayerId,
-            hostId: newHostId,
-            gameState: newGameState,
-            currentQuestion: newGameState === 'playerChoosing' ? null : r.currentQuestion,
-            playerQuestionHistory: newPlayerQuestionHistory,
-            chatMessages: [...r.chatMessages,
-                { id: Date.now().toString(), senderNickname: 'System', text: `${playerLeaving?.nickname || 'A player'} left the room. ${newHostId !== room.hostId && remainingPlayers.find(p=>p.id===newHostId) ? `${remainingPlayers.find(p=>p.id===newHostId)?.nickname} is the new host.` : '' }`, timestamp: new Date(), type: 'playerLeave'},
-                ...(newGameState === 'playerChoosing' && newCurrentPlayerId && r.gameState !== 'waiting' && r.currentPlayerId !== newCurrentPlayerId ?
-                  [{id: (Date.now()+1).toString(), senderNickname: 'System', text: `It's now ${remainingPlayers.find(p=>p.id === newCurrentPlayerId)?.nickname}'s turn. Choose Truth or Dare.`, timestamp: new Date(), type: 'turnChange' as ChatMessageType}]
-                  : [])
-            ]
-          }
-        : r
-      );
-    });
-  }, [toast, router /* setRooms is stable, selectNextPlayer is pure */]);
+      let newRound = activeRoom.round;
+      if (activeRoom.players.indexOf(nextPlayer) === 0 && activeRoom.currentPlayerId !== nextPlayer.id && activeRoom.round > 0) {
+        newRound = activeRoom.round + 1;
+      }
+      
+      const updates: any = {
+        currentPlayerId: nextPlayer.id,
+        gameState: 'playerChoosing',
+        currentQuestion: null,
+        round: newRound,
+        chatMessages: [...activeRoom.chatMessages, { id: Date.now().toString(), senderNickname: 'System', text: `It's ${nextPlayer.nickname}'s turn. Choose Truth or Dare.`, timestamp: new Date().toISOString(), type: 'turnChange' }],
+        lastActivity: new Date().toISOString()
+      };
+      await update(roomRef, updates);
 
-  const startGame = useCallback((roomId: string) => {
-    setRooms(prevRooms => {
-      return prevRooms.map(r => {
-        if (r.id === roomId) {
-          if (r.players.length < 1) {
-            toast({ title: "Cannot Start Game", description: "Need at least 1 player to start.", variant: "destructive" });
-            return r;
-          }
-          const firstPlayer = r.players[Math.floor(Math.random() * r.players.length)];
+    } catch (error) {
+      console.error("Error advancing turn:", error);
+      toast({ title: "Next Turn Error", description: "Could not advance to the next turn.", variant: "destructive" });
+    }
+  }, [activeRoom, activeRoomId, toast]);
 
-          const initialPlayerQuestionHistory = r.players.reduce((acc, player) => {
-            acc[player.id] = r.playerQuestionHistory?.[player.id] || { truths: [], dares: [] };
-            return acc;
-          }, {} as PlayerQuestionHistory);
 
-          return {
-            ...r,
-            gameState: 'playerChoosing',
-            currentPlayerId: firstPlayer.id,
-            round: 1,
-            playerQuestionHistory: initialPlayerQuestionHistory,
-            chatMessages: [...r.chatMessages,
-              { id: Date.now().toString(), senderNickname: 'System', text: `Game started! It's ${firstPlayer.nickname}'s turn.`, timestamp: new Date(), type: 'system' },
-              { id: (Date.now()+1).toString(), senderNickname: 'System', text: `${firstPlayer.nickname}, choose Truth or Dare.`, timestamp: new Date(), type: 'turnChange' }
-            ]
-          };
-        }
-        return r;
-      });
-    });
-  }, [toast /* setRooms stable */]);
-
-  const selectTruthOrDare = useCallback(async (roomId: string, type: 'truth' | 'dare') => {
+  const selectTruthOrDare = useCallback(async (type: 'truth' | 'dare') => {
+    if (!activeRoom || !activeRoomId || !activeRoom.currentPlayerId || activeRoom.gameState !== 'playerChoosing') {
+      toast({ title: "Error", description: "Cannot select truth or dare at this time.", variant: "destructive" });
+      return;
+    }
+    
+    const currentPlayer = activeRoom.players.find(p => p.id === activeRoom.currentPlayerId);
+    if (!currentPlayer) {
+       toast({ title: "Error", description: "Current player not found.", variant: "destructive" });
+       return;
+    }
+    
     setIsLoadingQuestion(true);
     let questionText: string | null = null;
     let questionId = `ai-${Date.now()}`;
-
-    const currentRoom = rooms.find(r => r.id === roomId); // Reading rooms state
-
-    if (!currentRoom || !currentRoom.currentPlayerId || currentRoom.gameState !== 'playerChoosing') {
-      toast({ title: "Error", description: "Cannot select truth or dare at this time.", variant: "destructive" });
-      setIsLoadingQuestion(false);
-      return;
-    }
-    const currentPlayer = currentRoom.players.find(p => p.id === currentRoom.currentPlayerId);
-    if (!currentPlayer) {
-       toast({ title: "Error", description: "Current player not found.", variant: "destructive" });
-       setIsLoadingQuestion(false);
-       return;
-    }
-
-    const askedQuestionsForPlayer = currentRoom.playerQuestionHistory[currentPlayer.id]?.[type] || [];
+    const askedQuestionsForPlayer = activeRoom.playerQuestionHistory[currentPlayer.id]?.[type] || [];
 
     try {
       const aiInput: GenerateQuestionInput = {
-        gameMode: currentRoom.mode,
+        gameMode: activeRoom.mode,
         questionType: type,
         playerNickname: currentPlayer.nickname,
         askedQuestions: askedQuestionsForPlayer,
@@ -265,16 +359,15 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       questionText = aiResponse.questionText;
     } catch (error) {
       console.error("AI Question Generation Error:", error);
-      toast({ title: "AI Error", description: "Could not generate a question from AI. Using fallback.", variant: "destructive" });
-
-      const fallbackPool = type === 'truth' ? currentRoom.truths : currentRoom.dares;
+      toast({ title: "AI Error", description: "AI failed. Using fallback.", variant: "destructive" });
+      const fallbackPool = type === 'truth' ? activeRoom.truths : activeRoom.dares;
       const availableFallbacks = fallbackPool.filter(q => !askedQuestionsForPlayer.includes(q.text));
       if (availableFallbacks.length > 0) {
         const fallbackQ = availableFallbacks[Math.floor(Math.random() * availableFallbacks.length)];
         questionText = fallbackQ.text;
         questionId = fallbackQ.id;
       } else {
-        toast({ title: "Out of Questions!", description: `No more ${type}s available (AI & fallback).`, variant: "destructive" });
+        toast({ title: "Out of Questions!", description: `No more ${type}s (AI & fallback).`, variant: "destructive" });
         setIsLoadingQuestion(false);
         return;
       }
@@ -287,85 +380,75 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const newQuestion: Question = { id: questionId, text: questionText, type };
+    const roomRef = ref(database, `rooms/${activeRoomId}`);
+    const updates: any = {};
+    updates.currentQuestion = newQuestion;
+    updates.gameState = 'questionRevealed';
+    updates.lastActivity = new Date().toISOString();
+    
+    const playerHistoryPath = `playerQuestionHistory/${currentPlayer.id}/${type}`;
+    const newPlayerHistory = [...askedQuestionsForPlayer, newQuestion.text];
+    updates[playerHistoryPath] = newPlayerHistory;
 
-    setRooms(prevRooms => { // Using updater form
-      return prevRooms.map(r => {
-        if (r.id === roomId) {
-          // Ensure currentRoom and currentPlayerId are from prevRooms to avoid stale closure
-          const playerForHistoryUpdateId = r.currentPlayerId;
-          if (!playerForHistoryUpdateId) return r;
-          const playerForNickname = r.players.find(p => p.id === playerForHistoryUpdateId);
+    const systemMessage: ChatMessage = { id: Date.now().toString(), senderNickname: 'System', text: `${currentPlayer.nickname} chose ${type}. Question: ${newQuestion.text}`, timestamp: new Date().toISOString(), type: 'system' };
+    updates.chatMessages = [...activeRoom.chatMessages, systemMessage];
 
-
-          const updatedHistory = { ...r.playerQuestionHistory };
-          if (!updatedHistory[playerForHistoryUpdateId]) {
-            updatedHistory[playerForHistoryUpdateId] = { truths: [], dares: [] };
-          }
-          const playerHistory = updatedHistory[playerForHistoryUpdateId][type] || [];
-          updatedHistory[playerForHistoryUpdateId][type] = [...playerHistory, newQuestion.text];
-
-          return {
-            ...r,
-            currentQuestion: newQuestion,
-            gameState: 'questionRevealed' as GameState,
-            playerQuestionHistory: updatedHistory,
-            chatMessages: [...r.chatMessages, { id: Date.now().toString(), senderNickname: 'System', text: `${playerForNickname?.nickname || 'Player'} chose ${type}. Question: ${newQuestion.text}`, timestamp: new Date(), type: 'system' }]
-          };
-        }
-        return r;
-      });
-    });
-    setIsLoadingQuestion(false);
-  }, [rooms, toast, setIsLoadingQuestion /* setRooms is stable */]);
-
-
-  const submitAnswer = useCallback((roomId: string, answer: string, isDareSuccessful?: boolean) => {
-    setRooms(prevRooms => {
-      const updatedRooms = prevRooms.map(r => {
-        if (r.id === roomId && (r.gameState === 'questionRevealed' || r.gameState === 'awaitingAnswer')) {
-          const player = r.players.find(p => p.id === r.currentPlayerId);
-          const messageType = r.currentQuestion?.type === 'truth' ? 'truthAnswer' : 'dareResult';
-          const formattedAnswer = r.currentQuestion?.type === 'dare' ? `${isDareSuccessful ? '✅ Completed:' : '❌ Failed:'} ${answer}` : answer;
-
-          let updatedPlayers = r.players;
-          if (r.currentQuestion?.type === 'dare' && player) {
-              updatedPlayers = r.players.map(p => p.id === player.id ? {...p, score: p.score + (isDareSuccessful ? 1 : 0)} : p);
-          }
-
-          return {
-            ...r,
-            players: updatedPlayers,
-            chatMessages: [...r.chatMessages, { id: Date.now().toString(), senderId: player?.id, senderNickname: player?.nickname || 'Player', text: formattedAnswer, timestamp: new Date(), type: messageType }],
-            currentQuestion: null,
-            gameState: 'inProgress' as GameState,
-          };
-        }
-        return r;
-      });
-      return updatedRooms;
-    });
-
-    // Call nextTurn after state update has been processed.
-    // This requires ensuring the state used by nextTurn is fresh or nextTurn handles it.
-    // Since nextTurn uses setRooms updater, it should be fine.
-    // It's better to check the room state from within an effect or after the setRooms is guaranteed to have run if decisions depend on the *new* state.
-    // For now, calling it directly assumes nextTurn operates on the latest conceptual state via its own setRooms.
-    const roomAfterSubmit = getCurrentRoom(roomId); // This might still be stale if called synchronously like this
-                                                  // But nextTurn itself uses setRooms(prev => ...)
-    if(roomAfterSubmit && roomAfterSubmit.gameState === 'inProgress') { // This check might be on stale data
-        nextTurn(roomId);
-    } else {
-        // A cleaner way for chained updates:
-        // setRooms(prev => { const updated = oneUpdate(prev); if(check(updated)) return anotherUpdate(updated); return updated; });
-        // Or use useEffect to react to gameState changes.
-        // For simplicity now, we rely on nextTurn's robustness.
-        // If nextTurn logic is complex and depends on reading state *before* updating, this could be an issue.
-        // Given nextTurn primarily calls setRooms(prev => ...), it should be safe.
-        // This direct call sequence can be tricky.
+    try {
+      await update(roomRef, updates);
+    } catch (error) {
+      console.error("Error updating room after selecting T/D:", error);
+      toast({title: "Error", description: "Could not update game state.", variant: "destructive"});
+    } finally {
+      setIsLoadingQuestion(false);
     }
-  }, [toast, nextTurn, getCurrentRoom, setIsLoadingModeration, setIsLoadingQuestion /* setRooms stable */]);
+  }, [activeRoom, activeRoomId, toast, setIsLoadingQuestion]);
 
-  const addChatMessage = useCallback(async (roomId: string, senderId: string, senderNickname: string, text: string, type: ChatMessageType = 'message') => {
+
+  const submitAnswer = useCallback(async (answer: string, isDareSuccessful?: boolean) => {
+    if (!activeRoom || !activeRoomId || !activeRoom.currentPlayerId || activeRoom.currentQuestion == null || (activeRoom.gameState !== 'questionRevealed' && activeRoom.gameState !== 'awaitingAnswer')) {
+        toast({ title: "Error", description: "Cannot submit answer at this time.", variant: "destructive"});
+        return;
+    }
+
+    const player = activeRoom.players.find(p => p.id === activeRoom.currentPlayerId);
+    if (!player) return;
+
+    const roomRef = ref(database, `rooms/${activeRoomId}`);
+    const messageType = activeRoom.currentQuestion.type === 'truth' ? 'truthAnswer' : 'dareResult';
+    const formattedAnswer = activeRoom.currentQuestion.type === 'dare' ? `${isDareSuccessful ? '✅ Completed:' : '❌ Failed:'} ${answer}` : answer;
+
+    const updates: any = {};
+    const newChatMessage: ChatMessage = { id: Date.now().toString(), senderId: player.id, senderNickname: player.nickname, text: formattedAnswer, timestamp: new Date().toISOString(), type: messageType };
+    updates.chatMessages = [...activeRoom.chatMessages, newChatMessage];
+    updates.currentQuestion = null;
+    updates.gameState = 'inProgress'; // Intermediate state before nextTurn makes it 'playerChoosing'
+    updates.lastActivity = new Date().toISOString();
+
+    if (activeRoom.currentQuestion.type === 'dare') {
+      const playerIndex = activeRoom.players.findIndex(p => p.id === player.id);
+      if (playerIndex !== -1) {
+        updates[`players/${playerIndex}/score`] = player.score + (isDareSuccessful ? 1 : 0);
+      }
+    }
+    
+    try {
+      await update(roomRef, updates);
+      // Call nextTurn after state update has been processed by RTDB listener or directly
+      // The listener for activeRoom will eventually call nextTurn IF gameState is appropriate
+      // OR we can call it here, but need to be careful about race conditions
+      // For now, let nextTurn be called from a useEffect watching gameState or similar, or ensure RTDB is source of truth
+      // Directly calling nextTurn() here.
+      await nextTurn();
+
+    } catch (error) {
+      console.error("Error submitting answer:", error);
+      toast({title: "Submit Error", description: "Could not submit answer.", variant: "destructive"});
+    }
+  }, [activeRoom, activeRoomId, toast, nextTurn]);
+
+  const addChatMessage = useCallback(async (senderId: string, senderNickname: string, text: string, type: ChatMessageType = 'message') => {
+    if (!activeRoom || !activeRoomId) return;
+
     setIsLoadingModeration(true);
     let processedText = text;
     let finalSenderNickname = senderNickname;
@@ -377,68 +460,36 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       if (moderationResult.flagged) {
         processedText = `Message from ${senderNickname} was flagged: ${moderationResult.reason}`;
         finalSenderNickname = 'System';
-        finalSenderId = 'system';
+        finalSenderId = 'system'; // Use a generic ID for system messages
         finalType = 'system';
         toast({ title: "Content Moderated", description: `Your message was flagged: ${moderationResult.reason}`, variant: "destructive" });
       }
     } catch (error) {
       console.error("Moderation error:", error);
       toast({ title: "Moderation Error", description: "Could not process message moderation.", variant: "destructive" });
+      // Decide if we still want to send the original message or block it. For now, send original if moderation fails.
     } finally {
       setIsLoadingModeration(false);
     }
 
-    setRooms(prevRooms => {
-      const roomForUpdate = prevRooms.find(pr => pr.id === roomId);
-      if (!roomForUpdate) return prevRooms;
-
-      return prevRooms.map(r =>
-        r.id === roomId
-        ? {
-            ...r,
-            chatMessages: [...r.chatMessages, { id: Date.now().toString(), senderId: finalSenderId, senderNickname: finalSenderNickname, text: processedText, timestamp: new Date(), type: finalType }]
-          }
-        : r
-      );
-    });
-  }, [toast, setIsLoadingModeration /* setRooms stable */]);
-
-  useEffect(() => {
-    const savedData = localStorage.getItem('riskyRoomsData');
-    if (savedData) {
-      try {
-        const parsedRooms: Room[] = JSON.parse(savedData).map((room: any) => ({
-          ...room,
-          mode: (room.mode === ('extreme' as any) ? 'moderate' : room.mode) as GameMode,
-          lastActivity: new Date(room.lastActivity || Date.now()),
-          chatMessages: (room.chatMessages || []).map((msg: any) => ({...msg, timestamp: new Date(msg.timestamp)})),
-          truths: room.truths || getFallbackQuestions(room.mode).truths,
-          dares: room.dares || getFallbackQuestions(room.mode).dares,
-          gameState: room.gameState || 'waiting',
-          players: room.players || [],
-          playerQuestionHistory: room.playerQuestionHistory || {},
-        }));
-        setRooms(parsedRooms);
-      } catch (e) {
-        console.error("Failed to parse rooms from localStorage", e);
-        localStorage.removeItem('riskyRoomsData');
-      }
+    const roomRef = ref(database, `rooms/${activeRoomId}`);
+    const newChatMessage: ChatMessage = { id: Date.now().toString(), senderId: finalSenderId, senderNickname: finalSenderNickname, text: processedText, timestamp: new Date().toISOString(), type: finalType };
+    const chatMessagesPath = `chatMessages/${activeRoom.chatMessages.length}`; // Appends to array
+    
+    try {
+      await update(roomRef, { [chatMessagesPath]: newChatMessage, lastActivity: new Date().toISOString() });
+    } catch (error) {
+        console.error("Error adding chat message:", error);
+        toast({title: "Chat Error", description: "Could not send message.", variant: "destructive"});
     }
-  }, [/* Empty dependency array, runs once on mount */]);
-
-   useEffect(() => {
-    if (rooms.length > 0 || localStorage.getItem('riskyRoomsData')) {
-        const roomsToSave = rooms.map(room => ({ ...room, lastActivity: new Date().toISOString() }));
-        localStorage.setItem('riskyRoomsData', JSON.stringify(roomsToSave));
-    }
-  }, [rooms]);
-
+  }, [activeRoom, activeRoomId, toast, setIsLoadingModeration]);
 
   return (
     <GameContext.Provider value={{
-      rooms, createRoom, joinRoom, leaveRoom, startGame,
+      activeRoom, activeRoomId, setActiveRoomId,
+      createRoom, joinRoom, leaveRoom, startGame,
       selectTruthOrDare, submitAnswer, addChatMessage,
-      getCurrentRoom, getPlayer, nextTurn, isLoadingModeration, isLoadingQuestion
+      getPlayer, isLoadingModeration, isLoadingQuestion, isLoadingRoom
     }}>
       {children}
     </GameContext.Provider>
@@ -452,4 +503,3 @@ export const useGame = (): GameContextType => {
   }
   return context;
 };
-
