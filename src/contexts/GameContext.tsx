@@ -2,7 +2,7 @@
 "use client";
 
 import type { Room, Player, ChatMessage, GameMode, Question, GameState, ChatMessageType, PlayerQuestionHistory } from '@/types/game';
-import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { generateRoomCode, getInitialQuestions as getFallbackQuestions, selectNextPlayer } from '@/lib/gameUtils';
 import { flagMessage, FlagMessageOutput } from '@/ai/flows/flag-message';
@@ -42,14 +42,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         localStorage.setItem(`riskyRoomsActiveRoom_${room.id}`, JSON.stringify(room));
       } catch (e) {
         console.error("Error saving room to localStorage:", e);
-        toast({ title: "Local Storage Error", description: "Could not save game state locally. Progress might be lost on refresh if space is full.", variant: "destructive" });
+        toast({ title: "Local Storage Error", description: "Could not save game state locally.", variant: "destructive" });
       }
     } else if (activeRoomId) {
-      // If room is null, but there was an activeRoomId, remove it from localStorage
       localStorage.removeItem(`riskyRoomsActiveRoom_${activeRoomId}`);
     }
   }, [activeRoomId, toast]);
-
 
   const setActiveRoomId = useCallback((roomId: string | null) => {
     setActiveRoomIdState(roomId);
@@ -58,8 +56,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         const storedRoom = localStorage.getItem(`riskyRoomsActiveRoom_${roomId}`);
         if (storedRoom) {
           const parsedRoom = JSON.parse(storedRoom) as Room;
-          // Ensure timestamps are Date objects if needed, though ISO strings are fine for storage
-           const processedRoomData = {
+          const processedRoomData = {
             ...parsedRoom,
             chatMessages: (parsedRoom.chatMessages || []).map((msg: ChatMessage) => ({
               ...msg,
@@ -69,7 +66,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           };
           setActiveRoomState(processedRoomData);
         } else {
-          setActiveRoomState(null); // No stored room for this ID
+          setActiveRoomState(null);
         }
       } catch (e) {
         console.error("Error loading room from localStorage:", e);
@@ -80,16 +77,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       setActiveRoomState(null);
     }
   }, [toast]);
-
+  
   useEffect(() => {
-    // Initial load of activeRoomId (e.g. from URL or previous session state if we stored activeRoomId itself)
-    // For now, activeRoomId is set by page components based on URL.
-    // This effect is more about loading the room data when activeRoomId changes.
     if (activeRoomId) {
       setActiveRoomId(activeRoomId);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount to potentially load last known activeRoomId's data
+  }, []);
 
   const getPlayer = useCallback((playerId: string): Player | undefined => {
     return activeRoom?.players.find(p => p.id === playerId);
@@ -97,7 +91,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const createRoom = useCallback(async (hostNickname: string, mode: GameMode): Promise<string | null> => {
     const newRoomId = generateRoomCode();
-    const hostPlayerId = Date.now().toString(); // Simple unique ID for local player
+    const hostPlayerId = Date.now().toString();
     const hostPlayer: Player = { id: hostPlayerId, nickname: hostNickname, isHost: true, score: 0 };
     const fallbackContent = getFallbackQuestions(mode);
     
@@ -122,31 +116,23 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     };
 
     updateActiveRoom(newRoomData);
-    setActiveRoomIdState(newRoomId); // Set the active room ID state
-    localStorage.setItem(`riskyRoomsPlayerId_${newRoomId}`, hostPlayerId); // Store host's player ID for this new room
+    setActiveRoomIdState(newRoomId);
+    localStorage.setItem(`riskyRoomsPlayerId_${newRoomId}`, hostPlayerId);
     return newRoomId;
   }, [updateActiveRoom, toast]);
 
   const joinRoom = useCallback(async (roomIdToJoin: string, playerNickname: string): Promise<Player | null> => {
-    if (!activeRoom || activeRoom.id !== roomIdToJoin) {
-      // Attempt to load the room if ID matches but not loaded (e.g. direct navigation)
+    let roomToJoin: Room | null = activeRoom;
+
+    if (!roomToJoin || roomToJoin.id !== roomIdToJoin) {
       try {
         const storedRoom = localStorage.getItem(`riskyRoomsActiveRoom_${roomIdToJoin}`);
         if (storedRoom) {
-          const parsedRoom = JSON.parse(storedRoom) as Room;
-          // setActiveRoomState(parsedRoom); // This will trigger updateActiveRoom via useEffect if activeRoomId changes
-                                        // Or call updateActiveRoom directly if activeRoomId is already correct
-          if (activeRoomId !== roomIdToJoin) setActiveRoomIdState(roomIdToJoin); // This should trigger load via useEffect if needed
-          updateActiveRoom(parsedRoom); // Explicitly set it for current operation
-          
-           // Now check nickname against the just-loaded room
-          if (parsedRoom.players.find(p => p.nickname.toLowerCase() === playerNickname.toLowerCase())) {
-            toast({ title: "Error", description: "Nickname already taken in this room.", variant: "destructive" });
-            return null;
-          }
-          // Continue to add player to parsedRoom
+          roomToJoin = JSON.parse(storedRoom) as Room;
+          if (activeRoomId !== roomIdToJoin) setActiveRoomIdState(roomIdToJoin);
+          updateActiveRoom(roomToJoin); 
         } else {
-          toast({ title: "Error", description: "Room not found.", variant: "destructive" });
+          toast({ title: "Error", description: "Room not found in local storage.", variant: "destructive" });
           return null;
         }
       } catch (e) {
@@ -154,15 +140,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
          return null;
       }
     }
-    // At this point, activeRoom should be the correct room to join (either already loaded or loaded above)
-    // Re-check after potential load:
-    if (!activeRoom || activeRoom.id !== roomIdToJoin) {
+    
+    if (!roomToJoin || roomToJoin.id !== roomIdToJoin) {
         toast({ title: "Error", description: "Room not available for joining.", variant: "destructive" });
         return null;
     }
 
-
-    if (activeRoom.players.find(p => p.nickname.toLowerCase() === playerNickname.toLowerCase())) {
+    if (roomToJoin.players.find(p => p.nickname.toLowerCase() === playerNickname.toLowerCase())) {
       toast({ title: "Error", description: "Nickname already taken in this room.", variant: "destructive" });
       return null;
     }
@@ -170,11 +154,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     const newPlayerId = Date.now().toString();
     const newPlayer: Player = { id: newPlayerId, nickname: playerNickname, isHost: false, score: 0 };
     
-    const updatedRoom = { ...activeRoom };
+    const updatedRoom = { ...roomToJoin };
     updatedRoom.players = [...updatedRoom.players, newPlayer];
     updatedRoom.chatMessages = [...(updatedRoom.chatMessages || []), { id: Date.now().toString(), senderNickname: 'System', text: `${playerNickname} joined the room!`, timestamp: new Date().toISOString(), type: 'playerJoin'}];
     updatedRoom.playerQuestionHistory = {
-      ...updatedRoom.playerQuestionHistory,
+      ...(updatedRoom.playerQuestionHistory || {}), // Ensure playerQuestionHistory exists
       [newPlayer.id]: { truths: [], dares: [] }
     };
     updatedRoom.lastActivity = new Date().toISOString();
@@ -186,25 +170,23 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const leaveRoom = useCallback(async () => {
     if (!activeRoom || !activeRoomId) {
-      toast({ title: "Error", description: "Cannot leave room: No active room.", variant: "destructive" });
       router.push('/');
       return;
     }
 
     const localPlayerId = localStorage.getItem(`riskyRoomsPlayerId_${activeRoomId}`);
     if (!localPlayerId) {
-      router.push('/'); // No player context for this room, just navigate away
+      router.push('/');
       return;
     }
 
     const playerLeaving = activeRoom.players.find(p => p.id === localPlayerId);
     if (!playerLeaving) {
-       router.push('/'); // Player not actually in the room state, navigate away
+       router.push('/');
        return;
     }
 
     const remainingPlayers = activeRoom.players.filter(p => p.id !== localPlayerId);
-
     localStorage.removeItem(`riskyRoomsPlayerId_${activeRoomId}`);
 
     if (remainingPlayers.length === 0) {
@@ -220,7 +202,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     updatedRoom.players = remainingPlayers;
     
     let newHostId = updatedRoom.hostId;
-    if (updatedRoom.hostId === localPlayerId) {
+    if (updatedRoom.hostId === localPlayerId && remainingPlayers.length > 0) {
       newHostId = remainingPlayers[0].id;
       updatedRoom.hostId = newHostId;
       updatedRoom.players = remainingPlayers.map(p => p.id === newHostId ? { ...p, isHost: true } : p);
@@ -241,21 +223,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     
-    const leaveMessage: ChatMessage = { id: Date.now().toString(), senderNickname: 'System', text: `${playerLeaving.nickname} left the room. ${newHostId !== activeRoom.hostId ? `${remainingPlayers.find(p => p.id === newHostId)?.nickname} is the new host.` : ''}`, timestamp: new Date().toISOString(), type: 'playerLeave' };
+    const leaveMessage: ChatMessage = { id: Date.now().toString(), senderNickname: 'System', text: `${playerLeaving.nickname} left the room. ${newHostId !== activeRoom.hostId && updatedRoom.hostId ? `${remainingPlayers.find(p => p.id === updatedRoom.hostId)?.nickname} is the new host.` : ''}`, timestamp: new Date().toISOString(), type: 'playerLeave' };
     let newChatMessages = [...(updatedRoom.chatMessages || []), leaveMessage];
-    if (turnChangeMessage) {
-      newChatMessages.push(turnChangeMessage);
-    }
+    if (turnChangeMessage) newChatMessages.push(turnChangeMessage);
     updatedRoom.chatMessages = newChatMessages;
     
     const newPlayerQuestionHistory = { ...updatedRoom.playerQuestionHistory };
-    delete newPlayerQuestionHistory[localPlayerId];
+    if (localPlayerId) delete newPlayerQuestionHistory[localPlayerId];
     updatedRoom.playerQuestionHistory = newPlayerQuestionHistory;
     updatedRoom.lastActivity = new Date().toISOString();
 
     updateActiveRoom(updatedRoom);
-    // No setActiveRoomIdState(null) here, as the current user leaving doesn't mean the room is invalid for others (if this were multiplayer)
-    // For single-player or if current user is leaving entirely, navigation is key.
     toast({ title: "Left Room", description: "You have left the game room." });
     router.push('/');
 
@@ -282,7 +260,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       ],
     };
     updateActiveRoom(updatedRoom);
-
   }, [activeRoom, updateActiveRoom, toast]);
 
   const nextTurn = useCallback(async () => {
@@ -317,7 +294,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       lastActivity: new Date().toISOString()
     };
     updateActiveRoom(updatedRoom);
-  }, [activeRoom, updateActiveRoom, toast]);
+  }, [activeRoom, updateActiveRoom]);
 
   const selectTruthOrDare = useCallback(async (type: 'truth' | 'dare') => {
     if (!activeRoom || !activeRoom.currentPlayerId || activeRoom.gameState !== 'playerChoosing') {
@@ -334,19 +311,28 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setIsLoadingQuestion(true);
     let questionText: string | null = null;
     let questionId = `ai-${Date.now()}`;
-    const askedQuestionsForPlayer = activeRoom.playerQuestionHistory[currentPlayer.id]?.[type === 'truth' ? 'truths' : 'dares'] || [];
+    const playerHistory = activeRoom.playerQuestionHistory?.[currentPlayer.id] || { truths: [], dares: [] };
+    const askedQuestionsForPlayer = playerHistory[type === 'truth' ? 'truths' : 'dares'] || [];
 
     try {
       const aiInput: GenerateQuestionInput = {
-        gameMode: activeRoom.mode,
+        gameMode: activeRoom.mode, 
         questionType: type,
         playerNickname: currentPlayer.nickname,
         askedQuestions: askedQuestionsForPlayer,
       };
+      console.log('[GameContext] Attempting AI Question Generation with input:', JSON.stringify(aiInput, null, 2));
       const aiResponse = await generateQuestion(aiInput);
+      console.log('[GameContext] AI Response:', aiResponse);
       questionText = aiResponse.questionText;
-    } catch (error) {
-      console.error("AI Question Generation Error:", error);
+    } catch (error: any) {
+      console.error("[GameContext] AI Question Generation Error Caught:", error);
+      if (error.message) {
+        console.error("[GameContext] AI Error Message:", error.message);
+      }
+      if (error.stack) {
+        console.error("[GameContext] AI Error Stack:", error.stack);
+      }
       toast({ title: "AI Error", description: "AI failed to generate question. Using fallback.", variant: "destructive" });
       const fallbackPool = type === 'truth' ? activeRoom.truths : activeRoom.dares;
       const availableFallbacks = fallbackPool.filter(q => !askedQuestionsForPlayer.includes(q.text));
@@ -371,8 +357,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     const updatedPlayerHistory = {
       ...activeRoom.playerQuestionHistory,
       [currentPlayer.id]: {
-        ...activeRoom.playerQuestionHistory[currentPlayer.id],
-        [type === 'truth' ? 'truths' : 'dares']: [...askedQuestionsForPlayer, newQuestion.text]
+        ...(activeRoom.playerQuestionHistory?.[currentPlayer.id] || { truths: [], dares: [] }),
+        [type === 'truth' ? 'truths' : 'dares']: [...(activeRoom.playerQuestionHistory?.[currentPlayer.id]?.[type === 'truth' ? 'truths' : 'dares'] || []), newQuestion.text]
       }
     };
 
@@ -416,13 +402,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       ...activeRoom,
       players: updatedPlayers,
       chatMessages: [...(activeRoom.chatMessages || []), newChatMessage],
-      currentQuestion: null,
-      // gameState will be set by nextTurn
+      // currentQuestion: null, // Keep currentQuestion until nextTurn explicitly clears it or sets a new one
+      gameState: 'awaitingAnswer' as GameState, // Transition state before nextTurn
       lastActivity: new Date().toISOString(),
     };
     
     updateActiveRoom(updatedRoom);
-    // Call nextTurn AFTER the state has been updated in localStorage.
     await nextTurn();
 
   }, [activeRoom, updateActiveRoom, toast, nextTurn]);
@@ -485,3 +470,4 @@ export const useGame = (): GameContextType => {
   }
   return context;
 };
+
