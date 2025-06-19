@@ -33,27 +33,8 @@ export default function CreateRoomPage() {
     setIsCreating(false);
 
     if (newRoomId) {
-      // Store host's player ID for this room. Assuming createRoom returns the room or host player.
-      // For RTDB, the host ID is set during room creation. We need to fetch it or have createRoom provide it.
-      // For now, let's assume the first player created in RTDB is the host.
-      // This part needs care: after room creation, we need the host's player ID.
-      // The GameContext's createRoom now returns newRoomId.
-      // The player ID can be constructed (e.g., Date.now()) or fetched.
-      // For simplicity, we'll navigate. The RoomPage will handle getting player ID from context.
-      // A better way: createRoom could return the hostPlayer object.
-      // For now, we assume the local player becomes the host.
-      // The RoomPage useEffect for localPlayerId needs to robustly get the host ID after room loads.
-      
-      // When room is created, GameContext.createRoom resolves, and then we navigate.
-      // The RoomPage useEffect will call setActiveRoomId(newRoomId), which triggers RTDB listener.
-      // When activeRoom is populated in context, RoomPage can then find the host ID if needed.
-      // For now, we set the active room ID to start listening immediately if desired, though navigation will do it.
-      setActiveRoomId(newRoomId); // Start listening if not already
-      
-      // The initial host player ID needs to be stored in localStorage for the RoomPage to pick up.
-      // This is tricky as createRoom in context doesn't directly return host's dynamic ID from RTDB easily.
-      // A common pattern: createRoom makes the host player, then that player ID is available when room loads.
-      // For now, we'll push to room, and RoomPage's useEffect will try to assign localPlayerId if it's the host.
+      // setActiveRoomId(newRoomId); // Context's createRoom now handles setting active room and its ID.
+                                  // Player ID is also stored by createRoom context.
       router.push(`/room/${newRoomId}`);
     }
     // Error handling (toast) is done within createRoom context function.

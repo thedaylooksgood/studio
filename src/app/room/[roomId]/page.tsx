@@ -26,7 +26,7 @@ export default function RoomPage() {
 
   const { 
     activeRoom, setActiveRoomId, getPlayer, startGame, selectTruthOrDare, 
-    submitAnswer, leaveRoom, isLoadingModeration, isLoadingQuestion, isLoadingRoom
+    submitAnswer, leaveRoom, isLoadingModeration, isLoadingQuestion
   } = useGame();
   
   const [localPlayerId, setLocalPlayerId] = useState<string | null>(null);
@@ -34,73 +34,54 @@ export default function RoomPage() {
   const [dareAnswerText, setDareAnswerText] = useState("");
   const [isAnswerModalOpen, setIsAnswerModalOpen] = useState(false);
   const [answerText, setAnswerText] = useState("");
+  const [isLoadingInitial, setIsLoadingInitial] = useState(true);
+
 
   useEffect(() => {
     if (roomId) {
-      setActiveRoomId(roomId);
+      setActiveRoomId(roomId); // This will attempt to load room from localStorage
     }
-    // Cleanup listener when component unmounts or roomId changes
-    return () => {
-      if (roomId) {
-        // setActiveRoomId(null); // Or handle listener detachment more explicitly if needed by context
-      }
-    };
+    setIsLoadingInitial(false); // Done with initial setup attempt
+    // No cleanup needed for setActiveRoomId as it's just setting local state now
   }, [roomId, setActiveRoomId]);
 
 
   useEffect(() => {
-    // This effect attempts to set localPlayerId once the activeRoom data is available
     const storedPlayerId = localStorage.getItem(`riskyRoomsPlayerId_${roomId}`);
     if (storedPlayerId) {
       setLocalPlayerId(storedPlayerId);
-    } else if (activeRoom && activeRoom.id === roomId) { // Ensure activeRoom is for the current roomId
-      // If no storedPlayerId, and activeRoom is loaded, try to identify the player
-      // This is mainly for the host after creating a room or if query param exists for new joiners
-      const searchParams = new URLSearchParams(window.location.search);
-      const playerIdFromQuery = searchParams.get('playerId');
-
+    } else if (activeRoom && activeRoom.id === roomId) { 
+      // This case is less likely to be hit for setting localPlayerId if it wasn't set during create/join
+      // But kept for robustness.
       if (activeRoom.players.length === 1 && activeRoom.hostId === activeRoom.players[0].id) {
-        // Likely the host just created the room
         setLocalPlayerId(activeRoom.hostId);
         localStorage.setItem(`riskyRoomsPlayerId_${roomId}`, activeRoom.hostId);
-      } else if (playerIdFromQuery && activeRoom.players.find(p => p.id === playerIdFromQuery)) {
-        // Player joined and ID is in query
-        setLocalPlayerId(playerIdFromQuery);
-        localStorage.setItem(`riskyRoomsPlayerId_${roomId}`, playerIdFromQuery);
-         // Clean up URL query param after use
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, document.title, newUrl);
       }
-      // If still no localPlayerId, they might be a spectator or need to rejoin.
-      // The UI will show "Loading Room & Player Info..." or appropriate messages.
     }
-  }, [roomId, activeRoom]); // Re-run if activeRoom data changes (e.g., after loading)
+  }, [roomId, activeRoom]);
 
   const currentPlayer = localPlayerId ? getPlayer(localPlayerId) : undefined;
   const gamePlayerWhoseTurn = activeRoom?.currentPlayerId ? getPlayer(activeRoom.currentPlayerId) : undefined;
-
+  
   useEffect(() => {
-    // Handle room not found AFTER attempting to load
-    if (!isLoadingRoom && !activeRoom && roomId) {
-      // Give a small delay for initial load from RTDB via context
-      const timer = setTimeout(() => {
-        if (!activeRoom && !isLoadingRoom) { // Re-check after delay
-             toast({ title: "Room Not Found", description: "This room doesn't exist or has been closed.", variant: "destructive" });
-             router.push('/');
-        }
-      }, 2500);
-      return () => clearTimeout(timer);
+    // Handle room not found after attempting to load from localStorage
+    if (!isLoadingInitial && !activeRoom && roomId) {
+      toast({ title: "Room Not Found", description: "This room doesn't exist in your local storage or has been cleared.", variant: "destructive" });
+      router.push('/');
     }
-  }, [isLoadingRoom, activeRoom, roomId, router, toast]);
+  }, [isLoadingInitial, activeRoom, roomId, router, toast]);
   
   const handleLeaveRoom = async () => {
+    // leaveRoom in context will handle clearing localStorage and navigating.
     if (currentPlayer) {
       setIsLeaving(true);
-      await leaveRoom(); // leaveRoom in context now knows activeRoomId and localPlayerId (implicitly)
-      localStorage.removeItem(`riskyRoomsPlayerId_${roomId}`); 
-      toast({ title: "Left Room", description: "You have left the game room." });
-      // router.push('/'); // leaveRoom in context will navigate if user is leaving.
+      await leaveRoom(); 
       setIsLeaving(false);
+    } else {
+      // If no current player context, just navigate
+      localStorage.removeItem(`riskyRoomsPlayerId_${roomId}`);
+      localStorage.removeItem(`riskyRoomsActiveRoom_${roomId}`);
+      router.push('/');
     }
   };
 
@@ -138,24 +119,36 @@ export default function RoomPage() {
     setDareAnswerText("");
   };
 
-  if (isLoadingRoom || !activeRoom || (activeRoom.players.length > 0 && !currentPlayer && localPlayerId === null)) {
-    // Show loader if room is loading, or if room is loaded but current player isn't identified yet (and it's not a spectator scenario with no localPlayerId)
-    // Also handles the case where localPlayerId is still null but we expect it (e.g. host just created)
+  if (isLoadingInitial || !activeRoom) {
     let loadingMessage = "Loading Room Info...";
-    if(isLoadingRoom) loadingMessage = "Connecting to Room...";
-    else if (!activeRoom && !isLoadingRoom) loadingMessage = "Room not found or connection failed.";
-    else if (activeRoom && !currentPlayer && activeRoom.players.length > 0) loadingMessage = "Identifying player...";
-
+    if (isLoadingInitial) loadingMessage = "Accessing local game state...";
+    else if (!activeRoom && !isLoadingInitial) loadingMessage = "Room not found in local state.";
 
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
         <p className="text-lg text-muted-foreground">{loadingMessage}</p>
-        {!isLoadingRoom && !activeRoom && <Button variant="link" onClick={() => router.push('/')} className="mt-4">Go Home</Button>}
+        {!isLoadingInitial && !activeRoom && <Button variant="link" onClick={() => router.push('/')} className="mt-4">Go Home</Button>}
       </div>
     );
   }
   
+  // If after initial load, activeRoom is present but localPlayerId is not, and there are players,
+  // it implies the user is accessing a room URL without having joined it in this session.
+  // We should prompt them to "join" or go back. For now, this state is caught by !currentPlayer checks.
+  if (!currentPlayer && activeRoom.players.length > 0) {
+     return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+        <Users className="h-12 w-12 text-primary mb-4" />
+        <p className="text-lg text-muted-foreground">You are not part of this game room in this session.</p>
+        <p className="text-sm text-muted-foreground mb-4">Room Code: {activeRoom.id}</p>
+        <Button onClick={() => router.push(`/join`)} className="mt-2">Join Room</Button>
+        <Button variant="link" onClick={() => router.push('/')} className="mt-2">Back to Home</Button>
+      </div>
+    );
+  }
+
+
   const isMyTurn = currentPlayer?.id === activeRoom.currentPlayerId;
 
   return (
@@ -172,7 +165,7 @@ export default function RoomPage() {
         </div>
         <div className="flex items-center gap-2">
           {currentPlayer && <span className="text-sm text-muted-foreground">You are: {currentPlayer.nickname} {currentPlayer.isHost && "(Host)"}</span>}
-          <Button variant="outline" size="sm" onClick={handleLeaveRoom} disabled={isLeaving || !currentPlayer}>
+          <Button variant="outline" size="sm" onClick={handleLeaveRoom} disabled={isLeaving}>
             <LogOut className="w-4 h-4 mr-1" /> {isLeaving ? "Leaving..." : "Leave Room"}
           </Button>
         </div>
@@ -299,15 +292,12 @@ export default function RoomPage() {
                 <Timer 
                     duration={60} 
                     onTimeUp={async () => {
-                        if(isMyTurn && (activeRoom.gameState === 'questionRevealed' || activeRoom.gameState === 'playerChoosing')) {
+                        if(isMyTurn && currentPlayer && (activeRoom.gameState === 'questionRevealed' || activeRoom.gameState === 'playerChoosing')) {
                             toast({title: "Time's Up!", description: "Moving to next player.", variant: "destructive"});
-                            if (activeRoom.gameState === 'questionRevealed') {
-                               await submitAnswer(activeRoom.currentQuestion?.type === 'truth' ? "Time ran out (skipped)." : "Time ran out (failed).", false);
+                            if (activeRoom.gameState === 'questionRevealed' && activeRoom.currentQuestion) { // Check currentQuestion exists
+                               await submitAnswer(activeRoom.currentQuestion.type === 'truth' ? "Time ran out (skipped)." : "Time ran out (failed).", false);
                             } else if (activeRoom.gameState === 'playerChoosing') {
-                                // If stuck choosing, it implies AI is taking too long or failed.
-                                // The submitAnswer will handle the "skip" and call nextTurn.
-                                // An explicit "skip turn" or force nextTurn might be cleaner for this specific scenario.
-                               await submitAnswer("Time ran out choosing question.", false);
+                               await submitAnswer("Time ran out choosing question.", false); // This implies no currentQuestion yet
                             }
                         }
                     }}
@@ -325,7 +315,7 @@ export default function RoomPage() {
               <CardFooter><Button onClick={() => { setActiveRoomId(null); router.push('/');}} className="w-full">Back to Home</Button></CardFooter>
             </Card>
           )}
-          {activeRoom.id && currentPlayer && ( // Ensure roomId and currentPlayer are available for ChatWindow
+          {activeRoom.id && currentPlayer && ( 
              <ChatWindow messages={activeRoom.chatMessages || []} roomId={activeRoom.id} currentPlayer={currentPlayer} />
           )}
         </main>

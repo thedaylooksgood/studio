@@ -16,7 +16,7 @@ export default function JoinRoomPage() {
   const [nickname, setNickname] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const router = useRouter();
-  const { joinRoom, setActiveRoomId } = useGame();
+  const { joinRoom, setActiveRoomId } = useGame(); // setActiveRoomId might be used if joinRoom doesn't handle it
   const { toast } = useToast();
 
   const handleJoinRoom = async () => {
@@ -33,12 +33,14 @@ export default function JoinRoomPage() {
     }
     
     setIsJoining(true);
+    // For local state, joinRoom will attempt to load the room if it exists in localStorage.
+    // It will then add the player.
     const player = await joinRoom(trimmedRoomCode, trimmedNickname);
     setIsJoining(false);
 
     if (player) {
-      localStorage.setItem(`riskyRoomsPlayerId_${trimmedRoomCode}`, player.id);
-      setActiveRoomId(trimmedRoomCode); // Start listening to this room
+      // Player ID is stored by joinRoom context.
+      // setActiveRoomId(trimmedRoomCode); // Context's joinRoom should handle setting the active room state
       router.push(`/room/${trimmedRoomCode}`);
     }
     // Error toasts (room not found, nickname taken) are handled within joinRoom context function
